@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-PrwiD8Ow+xnGzvKfZsOCrTQQg+Abo9g0H43i0HCLAlw='; style-src 'self' 'unsafe-inline' https://api.fontshare.com; font-src 'self' https://cdn.fontshare.com https://api.fontshare.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://www.youtube.com https://rlbxanqztphlwqivahzx.supabase.co wss://rlbxanqztphlwqivahzx.supabase.co https://www.googleapis.com https://graph.facebook.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none'; worker-src 'self'; manifest-src 'self'" />
+<meta name="referrer" content="strict-origin-when-cross-origin" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1c1d20" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/app-192.png" />
+<title>Colecta — tus guardados, unificados</title>
+<link rel="preconnect" href="https://api.fontshare.com" />
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&f[]=satoshi@400,500,700&display=swap" rel="stylesheet" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='11' cy='16' r='7' fill='none' stroke='%23b4532a' stroke-width='3'/%3E%3Ccircle cx='21' cy='16' r='7' fill='none' stroke='%23222' stroke-width='3'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles.css" />
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/supabase.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#" aria-label="Colecta">
+    <svg viewBox="0 0 40 28" width="40" height="28" fill="none" aria-hidden="true">
+      <circle cx="11" cy="14" r="9" stroke="var(--accent)" stroke-width="3"/>
+      <circle cx="20" cy="14" r="9" stroke="currentColor" stroke-width="3"/>
+      <circle cx="29" cy="14" r="9" stroke="currentColor" stroke-width="3" opacity=".45"/>
+    </svg>
+    <span>Colecta</span>
+  </a>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="groups" role="tab">Colecciones <span id="groupCount" class="pill">0</span></button>
+    <button class="tab" data-view="import" role="tab">Importar</button>
+    <button class="tab" data-view="settings" role="tab">Ajustes</button>
+  </nav>
+  <div class="user">
+    <span id="syncState" class="sync"></span>
+    <span id="userEmail" class="user-email"></span>
+    <button id="logoutBtn" class="btn ghost sm">Salir</button>
+  </div>
+  <button id="themeToggle" class="icon-btn" aria-label="Cambiar tema">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
+</header>
+
+<section id="auth" class="auth">
+  <form id="authForm" class="auth-card" novalidate>
+    <svg viewBox="0 0 40 28" width="56" height="40" fill="none" aria-hidden="true">
+      <circle cx="11" cy="14" r="9" stroke="var(--accent)" stroke-width="3"/>
+      <circle cx="20" cy="14" r="9" stroke="currentColor" stroke-width="3"/>
+      <circle cx="29" cy="14" r="9" stroke="currentColor" stroke-width="3" opacity=".45"/>
+    </svg>
+    <h1 id="authTitle">Ingresá a Colecta</h1>
+    <p class="muted">Tus colecciones de Facebook, Instagram y YouTube, guardadas en tu cuenta.</p>
+    <label class="field"><span>Email</span><input id="authEmail" class="input" type="email" autocomplete="email" required /></label>
+    <label class="field"><span>Contraseña</span><input id="authPass" class="input" type="password" autocomplete="current-password" required minlength="6" /></label>
+    <button id="authSubmit" class="btn primary" type="submit">Ingresar</button>
+    <p id="authMsg" class="auth-msg" role="status"></p>
+    <p id="authSwitch" class="auth-switch"></p>
+  </form>
+</section>
+
+<main>
+  <!-- IMPORT -->
+  <section id="view-import" class="view">
+    <div class="coll-top">
+      <div>
+        <h1 class="coll-title">Importar</h1>
+        <p class="muted">Elegí la red, abrí tu colección y Colecta trae solo los enlaces nuevos.</p>
+      </div>
+    </div>
+
+    <div class="net-banner key-banner" role="note">
+      <svg class="nb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+      <div>
+        <p class="nb-title">Podés importar desde <b>Instagram</b>, <b>Facebook</b> y <b>YouTube</b></p>
+        <p class="nb-sub">Tus colecciones guardadas, listas de reproducción y «Ver más tarde». Otras redes todavía no.</p>
+      </div>
+    </div>
+
+    <ul class="tiles net-keys" aria-label="Redes desde las que podés importar">
+      <li><button class="tile key net-key" data-net="instagram" style="--glow:#e4558f" type="button" aria-pressed="false">
+        <span class="key-cap">
+          <svg class="tile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".9" fill="currentColor" stroke="none"/></svg>
+          <span class="tile-name">Instagram</span>
+          <span class="tile-count" id="st-instagram">Sin datos</span>
+        </span></button></li>
+      <li><button class="tile key net-key" data-net="facebook" style="--glow:#4d8df5" type="button" aria-pressed="false">
+        <span class="key-cap">
+          <svg class="tile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M15.5 8h-1.6c-1.1 0-1.9.8-1.9 1.9V20.5M10 13h5"/></svg>
+          <span class="tile-name">Facebook</span>
+          <span class="tile-count" id="st-facebook">Sin datos</span>
+        </span></button></li>
+      <li><button class="tile key net-key" data-net="youtube" style="--glow:#f2484c" type="button" aria-pressed="false">
+        <span class="key-cap">
+          <svg class="tile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5.5" width="19" height="13" rx="4"/><path d="m10 9.2 5 2.8-5 2.8z"/></svg>
+          <span class="tile-name">YouTube</span>
+          <span class="tile-count" id="st-youtube">Sin datos</span>
+        </span></button></li>
+    </ul>
+
+    <section class="imp-panel key-banner" id="impPanel" style="--glow:#8a8f98">
+      <div class="imp-step">
+        <span class="imp-n">1</span>
+        <div class="imp-body">
+          <h2>Instalá el marcador «Enviar a Colecta»</h2>
+          <p class="desk-only">Arrastrá este botón a la barra de marcadores. Se hace una sola vez y sirve para las tres redes. Si tenías uno anterior, reemplazalo.</p>
+          <p class="phone-only">En el teléfono no se puede arrastrar: copiá el código y guardalo como marcador.</p>
+          <div class="row"><a id="bmLink" class="btn key-btn desk-only" href="#">Enviar a Colecta</a><button id="bmCopy" class="btn key-btn ghost-key" type="button">Copiar código del marcador</button></div>
+          <span id="bmVer" class="small bm-ver"></span>
+          <details class="phone-help"><summary>Cómo guardarlo en el teléfono</summary>
+            <ol>
+              <li><b>Android (Chrome):</b> tocá ⋮ → ☆ para guardar cualquier página como favorito, después editalo: nombre «Enviar a Colecta» y, en la dirección, pegá el código copiado.</li>
+              <li><b>iPhone (Safari):</b> compartí cualquier página → «Añadir marcador», después en Marcadores → Editar, cambiá el nombre a «Enviar a Colecta» y pegá el código en la dirección.</li>
+              <li><b>Para usarlo:</b> en la página de tu colección, escribí «Enviar a Colecta» en la barra de direcciones y tocá el marcador que aparece (en iPhone, abrilo desde Marcadores).</li>
+            </ol>
+            <textarea id="bmCode" class="input" rows="2" readonly aria-label="Código del marcador"></textarea>
+          </details>
+        </div>
+      </div>
+      <div class="imp-step">
+        <span class="imp-n">2</span>
+        <div class="imp-body">
+          <h2>Abrí la colección con tu sesión iniciada</h2>
+          <p id="netHelp">Tocá una red de arriba para ver dónde están tus guardados.</p>
+          <div class="row"><input id="igUrl" class="input" type="url" maxlength="2048" placeholder="O pegá el enlace de la colección o lista" /><button id="igOpen" class="btn key-btn ghost-key" type="button">Abrir</button></div>
+          <small id="igHint" class="small hint"></small>
+        </div>
+      </div>
+      <div class="imp-step">
+        <span class="imp-n">3</span>
+        <div class="imp-body">
+          <h2>Tocá el marcador y después «Abrir en Colecta»</h2>
+          <p>Colecta se abre sola, te pregunta en qué colección guardar y te muestra cuántos enlaces entraron.</p>
+          <details class="paste-alt"><summary>¿Copiaste el paquete a mano? Pegalo acá</summary>
+            <textarea id="pasteBox" class="input" rows="3" placeholder='{"colecta":2, ...}'></textarea>
+            <div class="row"><button id="pasteImport" class="btn key-btn" type="button">Importar lo pegado</button><button id="clipImport" class="btn key-btn ghost-key" type="button">Pegar del portapapeles</button></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="share-card key-banner" style="--glow:#5fc29a">
+      <svg class="nb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/></svg>
+      <div>
+        <p class="nb-title">Compartir a Colecta desde el teléfono</p>
+        <p class="nb-sub">En Android, instalá Colecta (menú ⋮ → «Instalar app» o «Agregar a la pantalla principal»). Después, en Instagram, Facebook o YouTube tocá Compartir → Más → <b>Colecta</b>: se abre la app y guarda la publicación o el video. Si compartís una lista de YouTube y cargaste tu clave en Ajustes, trae la lista entera.</p>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button id="clearBtn" class="btn ghost danger">Borrar todo</button>
+      <button id="goGroups" class="btn primary">Ver colecciones →</button>
+    </div>
+    <pre id="log" class="log" aria-live="polite"></pre>
+  </section>
+
+  <!-- GROUPS -->
+  <section id="view-groups" class="view active">
+    <div class="coll-top">
+      <div>
+        <h1 class="coll-title">Tus colecciones</h1>
+        <p class="muted" id="collSummary"></p>
+      </div>
+      <div class="coll-tools">
+        <input id="search" class="input" type="search" placeholder="Buscar en publicaciones, videos y #hashtags" aria-label="Buscar en tus guardados" />
+        <button id="exportAllBtn" class="btn sm" type="button">Exportar todo</button>
+      </div>
+    </div>
+    <ul id="groupList" class="tiles" aria-label="Colecciones"></ul>
+    <section class="detail" id="detail" hidden></section>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" class="view">
+    <div class="settings">
+      <h2>Enriquecimiento de hashtags</h2>
+      <p class="muted">Las exportaciones oficiales traen solo enlaces. Para leer los hashtags de cada publicación, Colecta consulta las APIs oficiales con tu clave. Las claves se guardan en tu cuenta, visibles solo para vos.</p>
+
+      <label class="field"><span>YouTube Data API v3 — API key</span>
+        <input id="ytKey" class="input" type="password" placeholder="AIza..." autocomplete="off" />
+        <small class="muted">Trae título, descripción y tags de cada video (lee los #hashtags de la descripción). Gratis en Google Cloud Console.</small>
+      </label>
+      <label class="field"><span>Meta oEmbed — token de app (APP_ID|CLIENT_TOKEN)</span>
+        <input id="metaToken" class="input" type="password" placeholder="123456|abcdef..." autocomplete="off" />
+        <small class="muted">Experimental: lee el texto de posts públicos de Instagram/Facebook. Requiere una app en Meta for Developers con “oEmbed Read”.</small>
+      </label>
+      <div class="actions left">
+        <button id="saveKeys" class="btn">Guardar claves</button>
+        <button id="enrichBtn" class="btn primary">Enriquecer ahora</button>
+      </div>
+      <pre id="enrichLog" class="log"></pre>
+
+      <h2>Exportar</h2>
+      <p class="muted">Descargá todas tus colecciones con sus enlaces y hashtags.</p>
+      <div class="actions left">
+        <button id="exportJson" class="btn ghost">Exportar JSON</button>
+        <button id="exportCsv" class="btn ghost">Exportar CSV</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="pickModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
+    <h2 id="pickTitle">¿A qué colección lo agregás?</h2>
+    <p class="muted">Elegí una colección existente o creá una nueva. Colecta recuerda tu elección para la próxima vez.</p>
+    <div id="pickBody"></div>
+    <div class="actions"><button id="pickCancel" class="btn ghost" type="button">Cancelar</button><button id="pickOk" class="btn primary" type="button">Agregar</button></div>
+  </div>
+</div>
+
+<div id="opModal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="opTitle">
+    <h2 id="opTitle"></h2>
+    <div id="opBody"></div>
+    <div class="actions"><button id="opCancel" class="btn ghost" type="button">Cancelar</button><button id="opOk" class="btn primary" type="button">Aceptar</button></div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<script src="db.js"></script>
+<script src="parsers.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
