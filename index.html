@@ -51,7 +51,8 @@
     <h1 id="authTitle">Ingresá a Colecta</h1>
     <p class="muted">Tus colecciones de Facebook, Instagram y YouTube, guardadas en tu cuenta.</p>
     <label class="field"><span>Email</span><input id="authEmail" class="input" type="email" autocomplete="email" required /></label>
-    <label class="field"><span>Contraseña</span><input id="authPass" class="input" type="password" autocomplete="current-password" required minlength="6" /></label>
+    <label class="field"><span>Contraseña</span><input id="authPass" class="input" type="password" autocomplete="current-password" required minlength="6" aria-describedby="passHint" /></label>
+    <p id="passHint" class="muted small pass-hint" hidden>Mínimo 10 caracteres, con minúsculas, mayúsculas y números.</p>
     <button id="authSubmit" class="btn primary" type="submit">Ingresar</button>
     <p id="authMsg" class="auth-msg" role="status"></p>
     <p id="authSwitch" class="auth-switch"></p>

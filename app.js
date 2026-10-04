@@ -1026,6 +1026,7 @@
     $("#authSubmit").textContent = m === "login" ? "Ingresar" : "Crear cuenta";
     $("#authSwitch").innerHTML = m === "login" ? '¿No tenés cuenta? <button type="button" id="toSignup">Registrate</button>' : '¿Ya tenés cuenta? <button type="button" id="toLogin">Ingresá</button>';
     $("#authPass").autocomplete = m === "login" ? "current-password" : "new-password";
+    $("#passHint").hidden = m === "login";
     $("#authMsg").textContent = "";
     ($("#toSignup") || $("#toLogin")).onclick = () => setAuthMode(m === "login" ? "signup" : "login");
   }
@@ -1037,7 +1038,7 @@
     try {
       if (authMode === "login") await DB.signIn(email, pass);
       else {
-        if (pass.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
+        if (pass.length < 10 || !/[a-z]/.test(pass) || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) throw new Error("La contraseña debe tener al menos 10 caracteres, con minúsculas, mayúsculas y números.");
         const r = await DB.signUp(email, pass);
         if (r.needsConfirm) { msg.textContent = "Te enviamos un email de confirmación. Abrilo y después ingresá acá. Si no llega en unos minutos, revisá la carpeta de spam."; msg.classList.add("ok"); setAuthMode("login"); $("#authMsg").textContent = "Revisá tu correo (también spam) para confirmar la cuenta y luego ingresá."; $("#authMsg").classList.add("ok"); }
       }
