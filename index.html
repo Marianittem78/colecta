@@ -2,7 +2,7 @@
 <html lang="es" data-theme="light">
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-PrwiD8Ow+xnGzvKfZsOCrTQQg+Abo9g0H43i0HCLAlw='; style-src 'self' 'unsafe-inline' https://api.fontshare.com; font-src 'self' https://cdn.fontshare.com https://api.fontshare.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://www.youtube.com https://rlbxanqztphlwqivahzx.supabase.co wss://rlbxanqztphlwqivahzx.supabase.co https://www.googleapis.com https://graph.facebook.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none'; worker-src 'self'; manifest-src 'self'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://api.fontshare.com; font-src 'self' https://cdn.fontshare.com https://api.fontshare.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://www.youtube.com https://rlbxanqztphlwqivahzx.supabase.co wss://rlbxanqztphlwqivahzx.supabase.co https://www.googleapis.com https://graph.facebook.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src https://challenges.cloudflare.com; worker-src 'self'; manifest-src 'self'" />
 <meta name="referrer" content="strict-origin-when-cross-origin" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#1c1d20" />
@@ -18,6 +18,9 @@
 </head>
 <body>
 <header class="topbar">
+  <button id="topBack" class="top-back" type="button" aria-label="Volver a todas las colecciones" title="Volver a todas las colecciones" hidden>
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+  </button>
   <a class="brand" href="#" aria-label="Colecta">
     <svg viewBox="0 0 40 28" width="40" height="28" fill="none" aria-hidden="true">
       <circle cx="11" cy="14" r="9" stroke="var(--accent)" stroke-width="3"/>
@@ -53,6 +56,7 @@
     <label class="field"><span>Email</span><input id="authEmail" class="input" type="email" autocomplete="email" required /></label>
     <label class="field"><span>Contraseña</span><input id="authPass" class="input" type="password" autocomplete="current-password" required minlength="6" aria-describedby="passHint" /></label>
     <p id="passHint" class="muted small pass-hint" hidden>Mínimo 10 caracteres, con minúsculas, mayúsculas y números.</p>
+    <div id="captcha" class="captcha"></div>
     <button id="authSubmit" class="btn primary" type="submit">Ingresar</button>
     <p id="authMsg" class="auth-msg" role="status"></p>
     <p id="authSwitch" class="auth-switch"></p>
@@ -222,5 +226,7 @@
 <script src="db.js"></script>
 <script src="parsers.js"></script>
 <script src="app.js"></script>
+<!-- Verificación anti-bots: va después de app.js, que define colectaCaptchaListo -->
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=colectaCaptchaListo" async defer></script>
 </body>
 </html>

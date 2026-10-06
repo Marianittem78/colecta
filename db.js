@@ -40,6 +40,8 @@
     id: r.id, net: r.net, collection: r.collection, url: r.url, videoId: r.video_id || undefined,
     title: r.title || "", author: r.author || "", text: r.body || "", hashtags: r.hashtags || [],
     thumb: r.thumb || undefined, savedAt: r.saved_at ? Date.parse(r.saved_at) : null, enriched: r.enriched, truncated: !!r.truncated,
+    addedAt: r.created_at ? Date.parse(r.created_at) : null,
+    shortTitle: r.short_title || "", // título escrito por la IA (lo guarda la función «titulos»; toRow no lo toca)
   });
 
   async function userId() {
@@ -50,17 +52,18 @@
   window.DB = {
     client: sb,
     onAuth(cb) { sb.auth.onAuthStateChange((_e, session) => cb(session?.user || null)); },
-    async signIn(email, password) {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
+    // captchaToken: token de Cloudflare Turnstile (Supabase lo exige si la protección anti-bots está activa)
+    async signIn(email, password, captchaToken) {
+      const { error } = await sb.auth.signInWithPassword({ email, password, options: { captchaToken } });
       if (error) throw error;
     },
-    async signUp(email, password) {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split("#")[0] } });
+    async signUp(email, password, captchaToken) {
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split("#")[0], captchaToken } });
       if (error) throw error;
       return { needsConfirm: !data.session };
     },
-    async resendConfirm(email) {
-      const { error } = await sb.auth.resend({ type: "signup", email, options: { emailRedirectTo: location.href.split("#")[0] } });
+    async resendConfirm(email, captchaToken) {
+      const { error } = await sb.auth.resend({ type: "signup", email, options: { emailRedirectTo: location.href.split("#")[0], captchaToken } });
       if (error) throw error;
     },
     async signOut() { await sb.auth.signOut(); },
@@ -96,6 +99,23 @@
     async renameItems(ids, name) {
       for (let k = 0; k < ids.length; k += 200) {
         const { error } = await sb.from("items").update({ collection: name }).in("id", ids.slice(k, k + 200));
+        if (error) throw error;
+      }
+    },
+    // Pide a la función «titulos» los títulos de hasta 20 enlaces. Devuelve { titulos } o { error, espera }
+    async makeTitles(ids) {
+      const { data, error } = await sb.functions.invoke("titulos", { body: { ids } });
+      if (!error) return { titulos: Array.isArray(data?.titulos) ? data.titulos : [] };
+      const res = error.context;
+      if (!res || typeof res.status !== "number") return { error: "red" };
+      let code = "http";
+      try { code = (await res.clone().json()).error || code; } catch { /* sin cuerpo JSON */ }
+      return { error: code, espera: Number(res.headers.get("Retry-After")) || 0 };
+    },
+    // Borra el título de la IA para que se vuelva a escribir (cuando cambió el contenido)
+    async resetTitles(ids) {
+      for (let k = 0; k < ids.length; k += 200) {
+        const { error } = await sb.from("items").update({ short_title: null }).in("id", ids.slice(k, k + 200));
         if (error) throw error;
       }
     },

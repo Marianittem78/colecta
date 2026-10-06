@@ -241,6 +241,8 @@
             v.author = v.author || d.author || "";
             v.text = v.text || d.shortDescription || "";
             v.tags = (d.keywords || []).slice(0, 8).map((k) => "#" + k.toLowerCase().replace(/\s+/g, ""));
+            const mf = p.microformat && p.microformat.playerMicroformatRenderer;
+            v.date = (mf && (mf.publishDate || mf.uploadDate)) || "";
           } catch {}
           done++;
           if (done % 5 === 0 || done === fresh.length) say("«" + name + "»: " + fresh.length + " nuevos, leyendo detalles " + done + "/" + fresh.length);
@@ -253,7 +255,7 @@
         title: v.title, author: v.author, text: v.text || "",
         hashtags: [...new Set([...((v.text || "").toLowerCase().match(/#[\p{L}\p{N}_]{2,}/gu) || []), ...(v.tags || [])])],
         thumb: "https://i.ytimg.com/vi/" + v.id + "/mqdefault.jpg",
-        enriched: true, savedAt: null,
+        enriched: true, savedAt: v.date ? Date.parse(v.date) || null : null,
       }));
     }
     finish("youtube", out, sources);

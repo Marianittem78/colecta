@@ -23,7 +23,7 @@
       .replace(/#[\p{L}\p{N}_]+/gu, " ")
       .replace(/[^\p{L}\p{N}\s]/gu, " ")
       .split(/\s+/).filter((w) => w.length > 3 && !STOP.has(w) && !/^\d+$/.test(w));
-    const freq = {};
+    const freq = Object.create(null); // sin prototipo: la palabra «constructor» no rompe el conteo
     words.forEach((w) => (freq[w] = (freq[w] || 0) + 1));
     return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, max).map(([w]) => w);
   }
@@ -153,7 +153,7 @@
   }
 
   function parseYouTubePlaylistsIndex(text) {
-    const rows = parseCsv(text); const map = {};
+    const rows = parseCsv(text); const map = Object.create(null);
     const h = rows[0] || [];
     const idIdx = h.findIndex((x) => /playlist id|id de la lista|id de lista/i.test(x));
     const tIdx = h.findIndex((x) => /title|t[ií]tulo/i.test(x) && !/video/i.test(x));
@@ -189,8 +189,64 @@
     return items;
   }
 
+  /* ---------- Título rápido con reglas: se muestra hasta que llega el de la IA ---------- */
+  const COLA = new Set("de del la el los las un una y o en a al con para por que su sus tu mi the and of to in for on with a an or".split(" "));
+  const letras = (w) => (w.match(/\p{L}/gu) || []).length;
+  function cleanTitle(s) {
+    let t = String(s || "").normalize("NFKC")
+      .replace(/https?:\/\/\S+/g, " ")
+      .replace(/\s(Publicaci[oó]n|Enlace|Reels?|Video|Foto|Evento)\s•\s.*$/i, " ") // pie de las tarjetas de Facebook
+      .replace(/^\s*\d{1,2}:\d{2}(:\d{2})?\s+/, "") // duración de los videos
+      .replace(/[#@][\p{L}\p{N}_.]+/gu, " ")
+      .replace(/[\u{FE0F}\u{200D}]/gu, "")
+      .replace(/[\p{Extended_Pictographic}\u{2600}-\u{27BF}\u{0950}]+/gu, " · ") // los emojis suelen cerrar una frase
+      .replace(/\s*[|•·]+(\s*[|•·]+)*\s*/g, ". ")
+      .replace(/^[.\s]+/, "")
+      .replace(/\s+/g, " ").trim();
+    // Primera frase con al menos dos palabras
+    const partes = t.split(/(?<=[.!?…:])\s+|\s[-–]\s|\s?—/).map((x) => x.trim());
+    // Si no hay frase de dos palabras, sirve una sola palabra con sentido («Locro»)
+    let f = partes.find((x) => x.split(" ").filter((w) => letras(w)).length >= 2) || partes.find((x) => letras(x) >= 3) || "";
+    if (!f) return "";
+    // Mayúsculas: frase gritada → todo en minúscula; Title Case → minúscula salvo palabras con mayúsculas internas (DaVinci)
+    const ls = f.match(/\p{L}/gu) || [];
+    const words = f.split(" ");
+    if (ls.filter((c) => c !== c.toLowerCase()).length / ls.length > 0.6) f = f.toLowerCase();
+    else {
+      const largas = words.slice(1).filter((w) => letras(w) >= 4); // la primera palabra siempre va con mayúscula: no cuenta
+      const titleCase = largas.length >= 2 && largas.filter((w) => /^\P{L}*\p{Lu}/u.test(w)).length / largas.length >= 0.6;
+      const caps = words.map((w) => letras(w) > 0 && w === w.toUpperCase());
+      f = words.map((w, k) => {
+        // palabra gritada: larga, o corta pero junto a otras en mayúsculas (las siglas sueltas como SEO quedan)
+        if (caps[k] && (letras(w) >= 4 || caps[k - 1] || caps[k + 1])) return w.toLowerCase();
+        if (titleCase && !/\p{Ll}\p{Lu}/u.test(w)) return w.toLowerCase();
+        return w;
+      }).join(" ");
+    }
+    if (f.length > 70) f = f.slice(0, 70).replace(/\s+\S*$/, "");
+    const pregunta = /^¿/.test(f);
+    f = f.replace(pregunta ? /[\s,;:.!¡(\[-]+$/u : /[\s,;:.!¡?¿(\[-]+$/u, "").replace(/^¡+/u, "");
+    let ws = f.split(" ");
+    while (ws.length > 2 && COLA.has(ws[ws.length - 1].toLowerCase())) ws.pop();
+    f = ws.join(" ");
+    if (pregunta && !/\?$/.test(f)) f += "?";
+    if (!/\p{L}/u.test(f)) return "";
+    // Mayúscula inicial solo si la frase empieza con letra (después de ¿ ¡ « o comillas), no en «99,9% de…»
+    const k = f.match(/^[¿¡«"“'([]*/)[0].length;
+    return /\p{L}/u.test(f[k] || "") ? f.slice(0, k) + f[k].toLocaleUpperCase("es") + f.slice(k + 1) : f;
+  }
+  function quickTitle(i) {
+    const t = cleanTitle(i.title) || cleanTitle(i.text);
+    if (t) return t;
+    if (i.net === "facebook") {
+      try { const h = new URL(i.url).hostname.replace(/^www\./, ""); if (!/(^|\.)(facebook\.com|fb\.watch)$/.test(h)) return "Enlace de " + h; } catch { /* sin enlace */ }
+      return "Publicación de Facebook";
+    }
+    return i.net === "youtube" ? "Video de YouTube" : "Publicación de Instagram";
+  }
+
   window.Parsers = {
-    UNCAT, fixText, extractHashtags, keywords, normalizeName, uid, parseCsv,
+    UNCAT, fixText, extractHashtags, keywords, normalizeName, uid, parseCsv, quickTitle,
     parseInstagram, parseFacebook, parseYouTubePlaylist, parseYouTubePlaylistsIndex,
   };
 })();

@@ -1,16 +1,24 @@
 /* Colecta — lógica de la app */
 (function () {
+  // Contra clickjacking: GitHub Pages no deja enviar frame-ancestors, así que Colecta se niega a funcionar dentro de otra página
+  if (window.top !== window.self) { document.body.textContent = "Colecta no se puede usar dentro de otra página."; return; }
+
   const P = window.Parsers;
   const LS = { items: "colecta.items", keys: "colecta.keys", syn: "colecta.synonyms", theme: "colecta.theme" };
   const NETS = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube" };
+  const own = (o, k) => Object.hasOwn(o, k); // evita que claves como «constructor» o «__proto__» pasen como válidas
 
-  const mem = {}; // almacenamiento en memoria (la vista previa no permite almacenamiento del navegador)
-  const store = { get: (k) => (k in mem ? mem[k] : null), set: (k, v) => { mem[k] = v; } };
+  // Preferencias del dispositivo (por ahora, el tema): localStorage si se puede, si no en memoria
+  const mem = {};
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k); } catch { return own(mem, k) ? mem[k] : null; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch { mem[k] = v; } },
+  };
   let items = [];
   let synonymsText = "";
   let sourceMap = {}; // "red:idColección" → colección de Colecta elegida
   let currentUser = null;
-  let state = { view: "import", selected: null, filter: "all", query: "", netFilter: "all", tagFilter: null };
+  let state = { view: "import", selected: null, filter: "all", query: "", netFilter: "all", tagFilter: null, sort: "recent" };
 
   function load(k, d) { try { return JSON.parse(store.get(k)) ?? d; } catch { return d; } }
   const $ = (s, r = document) => r.querySelector(s);
@@ -19,8 +27,8 @@
 
   /* ---------- Seguridad y límites ---------- */
   const LIMITS = { items: 5000, body: 2000, title: 500, author: 200, url: 2048, coll: 100, tags: 60, tag: 100, paste: 10 * 1024 * 1024, file: 1024 * 1024 * 1024, entry: 60 * 1024 * 1024 };
-  const BM_SHA256 = "52bb95768ad902f1b7b5be9192eb2e529955c452acc308aecb81bc8e78a47505";
-  const BM_VERSION = "3.1";
+  const BM_SHA256 = "05d59f00fe88a44dde14ceb84ee7b3be9e9f0241923aa5900f2f4a793f842025";
+  const BM_VERSION = "3.2";
   function safeUrl(u) {
     const raw = String(u ?? "").trim();
     if (!raw || raw.length > LIMITS.url) return null;
@@ -40,7 +48,7 @@
   function sanitizeItem(i, net, collection) {
     if (!i || typeof i !== "object") return null;
     const url = safeUrl(i.url);
-    if (!url || !NETS[net]) return null;
+    if (!url || !own(NETS, net)) return null;
     const coll = clip(String(collection ?? "").trim(), LIMITS.coll);
     if (!coll) return null;
     const t = typeof i.savedAt === "number" ? i.savedAt : Date.parse(i.savedAt);
@@ -78,6 +86,7 @@
     $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
     $$(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + view));
     if (view === "groups") renderGroups();
+    syncNav();
   }
   $$(".tab").forEach((t) => (t.onclick = () => { if (t.dataset.view === "groups") { state.selected = null; state.tagFilter = null; } show(t.dataset.view); }));
   $("#goGroups").onclick = () => { state.selected = null; show("groups"); };
@@ -143,6 +152,13 @@
   }
 
   /* ---------- Paquetes del marcador: preguntar a qué colección van ---------- */
+  // Un paquete pegado a mano puede venir dañado o armado a propósito: solo se aceptan objetos
+  function cleanPkg(pkg) {
+    const isObj = (x) => !!x && typeof x === "object" && !Array.isArray(x);
+    pkg.items = pkg.items.filter(isObj);
+    if (Array.isArray(pkg.sources)) pkg.sources = pkg.sources.filter(isObj);
+    return pkg;
+  }
   function sourcesOf(pkg) {
     if (Array.isArray(pkg.sources) && pkg.sources.length) return pkg.sources;
     // Formato anterior: agrupar por el nombre de colección de origen
@@ -197,8 +213,9 @@
   }
 
   async function importPackage(pkg) {
+    if (!cleanPkg(pkg).items.length) return log("✗ El paquete no trae enlaces para importar.");
     const choices = await askTargets(pkg);
-    if (!choices) return log("Importación cancelada.");
+    if (!choices || !choices.length) return log("Importación cancelada.");
     const existingUrls = new Set(items.map((i) => i.url));
     let total = 0, skipped = 0, invalid = 0, overLimit = 0;
     let room = Math.max(0, LIMITS.items - realCount());
@@ -232,13 +249,15 @@
 
   async function merge(newItems) {
     const byKey = new Map(items.map((i) => [i.net + "|" + i.url + "|" + i.collection, i]));
-    const added = [];
+    const added = [], changed = [];
+    const now = Date.now(); // misma hora para todo el lote: al ordenar por «agregados» se respeta su orden
     for (const it of newItems) {
       const k = it.net + "|" + it.url + "|" + it.collection;
-      if (!byKey.has(k)) { const n = { hashtags: [], ...it }; byKey.set(k, n); added.push(n); }
+      if (!byKey.has(k)) { const n = { hashtags: [], addedAt: now, ...it, shortTitle: "" }; byKey.set(k, n); added.push(n); }
       else {
         const old = byKey.get(k);
-        if (it.text && it.text !== old.text) { Object.assign(old, { title: it.title || old.title, author: it.author || old.author, text: it.text, thumb: it.thumb || old.thumb, hashtags: it.hashtags && it.hashtags.length ? it.hashtags : old.hashtags, enriched: it.enriched || old.enriched }); added.push(old); }
+        // Cambió el contenido: el título de la IA se vuelve a escribir
+        if (it.text && it.text !== old.text) { Object.assign(old, { title: it.title || old.title, author: it.author || old.author, text: it.text, thumb: it.thumb || old.thumb, hashtags: it.hashtags && it.hashtags.length ? it.hashtags : old.hashtags, enriched: it.enriched || old.enriched, shortTitle: "" }); added.push(old); changed.push(old); }
       }
     }
     // Si un enlace está en alguna colección, quitamos su duplicado "Sin colección"
@@ -260,8 +279,10 @@
         const idx = new Map(saved.map((r) => [r.net + "|" + r.url + "|" + r.collection, r.id]));
         toSave.forEach((i) => (i.id = idx.get(i.net + "|" + i.url + "|" + i.collection)));
       }
+      const re = changed.filter((i) => i.id).map((i) => i.id);
+      if (re.length) await DB.resetTitles(re);
       setSync("Guardado");
-      
+      curateTitles();
     } catch (err) { setSync("Error al guardar", true); log("✗ " + friendlyErr(err)); }
   }
 
@@ -322,12 +343,11 @@
   }
 
   function buildGroups() {
-    const syn = {};
     const groups = new Map();
     for (const it of items) {
-      const n = P.normalizeName(it.collection);
-      const key = syn[n] || n || "sin coleccion";
-      if (!groups.has(key)) groups.set(key, { key, names: {}, items: [], nets: { facebook: 0, instagram: 0, youtube: 0 } });
+      const key = P.normalizeName(it.collection) || "sin coleccion";
+      // Diccionarios sin prototipo: una colección llamada «__proto__» o «constructor» no rompe nada
+      if (!groups.has(key)) groups.set(key, { key, names: Object.create(null), items: [], nets: { facebook: 0, instagram: 0, youtube: 0 } });
       const g = groups.get(key);
       g.names[it.collection] = (g.names[it.collection] || 0) + 1;
       g.items.push(it); g.nets[it.net]++;
@@ -335,7 +355,7 @@
     return [...groups.values()].map((g) => {
       g.name = Object.entries(g.names).sort((a, b) => b[1] - a[1])[0][0];
       g.netCount = Object.values(g.nets).filter(Boolean).length;
-      const tf = {};
+      const tf = Object.create(null);
       g.items.forEach((i) => tagsOf(i).forEach((t) => (tf[t] = (tf[t] || 0) + 1)));
       g.tags = Object.entries(tf).sort((a, b) => b[1] - a[1]);
       return g;
@@ -345,7 +365,7 @@
   // ---- Buscador: título, autor, texto de la publicación / descripción del video y hashtags
   const fold = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const terms = (q) => fold(q).split(/\s+/).filter(Boolean);
-  const haystack = (i) => fold([i.title, i.author, i.text, tagsOf(i).join(" "), i.collection].join(" \n "));
+  const haystack = (i) => fold([i.shortTitle, i.title, i.author, i.text, tagsOf(i).join(" "), i.collection].join(" \n "));
   const matches = (i, ts) => { const h = haystack(i); return ts.every((t) => h.includes(t)); };
   function snippet(text, ts) {
     const raw = String(text || "").replace(/\s+/g, " ").trim();
@@ -372,6 +392,91 @@
     }
     return out + (open ? "</mark>" : "");
   }
+
+  /* ---------- Títulos curados: los escribe Claude en la función «titulos» de Supabase ---------- */
+  // Mientras no llega el de la IA (o si no hay IA), se muestra un título armado con reglas
+  function displayTitle(i) {
+    if (i.shortTitle) return i.shortTitle;
+    const src = i.net + "\u0000" + i.title + "\u0000" + i.text;
+    if (i._qtSrc !== src) { i._qt = P.quickTitle(i); i._qtSrc = src; }
+    return i._qt;
+  }
+  // El texto original queda a mano al pasar el mouse, si es distinto del título que se ve
+  const originalTip = (i) => { const o = String(i.title || "").trim(); return o && o !== displayTitle(i) ? ` title="${esc(clip(o, 300))}"` : ""; };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const titling = { busy: false, off: false, failed: new Set(), inFlight: new Set() };
+  // Pide títulos de a 20 (lo más nuevo primero) con dos pedidos a la vez; corre en segundo plano
+  async function curateTitles() {
+    if (titling.busy || titling.off || !currentUser) return;
+    titling.busy = true;
+    const user = currentUser;
+    const pending = () => items.filter((i) => i.id && !i.demo && !i.shortTitle && !titling.failed.has(i.id) && !titling.inFlight.has(i.id));
+    const worker = async () => {
+      let waits = 0;
+      while (!titling.off && currentUser === user) {
+        const batch = pending().sort(byAdded).slice(0, 20);
+        if (!batch.length) return;
+        batch.forEach((i) => titling.inFlight.add(i.id));
+        setSync(`Escribiendo títulos… faltan ${pending().length + titling.inFlight.size}`);
+        const r = await DB.makeTitles(batch.map((i) => i.id)).catch(() => ({ error: "red" }));
+        batch.forEach((i) => titling.inFlight.delete(i.id));
+        if (r.error) {
+          if (r.error === "ocupado" && waits++ < 5) { await sleep(Math.min(r.espera || 20, 120) * 1000); continue; }
+          // Sin clave de Anthropic, sin cupo del día o sin sesión: no se insiste hasta volver a entrar
+          if (/^(sin_clave|cupo|sesion)$/.test(r.error)) titling.off = true;
+          console.warn("Títulos con IA:", r.error);
+          return; // los errores pasajeros se reintentan en la próxima importación
+        }
+        waits = 0;
+        const got = new Map(r.titulos.map((t) => [t.id, t.titulo]));
+        batch.forEach((i) => { const t = got.get(i.id); if (typeof t === "string" && t) i.shortTitle = clip(t, 120); else titling.failed.add(i.id); });
+        refreshTitles(batch);
+      }
+    };
+    try { await Promise.all([worker(), worker()]); }
+    finally { titling.busy = false; if (currentUser === user) setSync("Guardado"); }
+  }
+  // Actualiza en pantalla los títulos que llegaron, sin volver a dibujar la lista
+  function refreshTitles(list) {
+    for (const i of list) {
+      if (!i.shortTitle) continue;
+      $$(`.ititle[data-id="${CSS.escape(i.id)}"]`).forEach((a) => { a.textContent = i.shortTitle; const tip = String(i.title || "").trim(); if (tip && tip !== i.shortTitle) a.title = clip(tip, 300); });
+    }
+  }
+
+  /* ---------- Orden de los enlaces ---------- */
+  // savedAt es la fecha de publicación (Instagram y YouTube); Facebook no la informa.
+  // Lo que no tiene fecha va al final, de lo último agregado a lo primero.
+  const SORTS = {
+    recent: "Más recientes primero",
+    oldest: "Más antiguas primero",
+    added: "Últimos agregados a Colecta",
+    title: "Título (A–Z)",
+    author: "Autor (A–Z)",
+  };
+  const hasDate = (i) => Number.isFinite(i.savedAt);
+  const byAdded = (a, b) => (b.addedAt || 0) - (a.addedAt || 0);
+  const sortText = (s) => fold(s).replace(/^[^\p{L}\p{N}]+/u, "");
+  function sortItems(list, how = state.sort) {
+    const out = list.slice(); // sort es estable: los empates conservan el orden de importación
+    if (how === "recent" || how === "oldest") {
+      const dir = how === "recent" ? -1 : 1;
+      return out.sort((a, b) => hasDate(a) !== hasDate(b) ? (hasDate(a) ? -1 : 1) : hasDate(a) ? dir * (a.savedAt - b.savedAt) : byAdded(a, b));
+    }
+    if (how === "added") return out.sort(byAdded);
+    const keyOf = how === "author" ? (i) => i.author : displayTitle;
+    return out.map((i) => [sortText(keyOf(i)), i]).sort(([x], [y]) => (!x !== !y ? (x ? -1 : 1) : x.localeCompare(y, "es"))).map(([, i]) => i);
+  }
+  function sortBar(list) {
+    const undated = /^(recent|oldest)$/.test(state.sort) ? list.filter((i) => !hasDate(i)) : [];
+    const ytUndated = undated.some((i) => i.net === "youtube");
+    return `<div class="sortbar">
+      <label class="sort-field"><span>Ordenar</span>
+        <select class="input" id="sortSel">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${state.sort === k ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      ${undated.length ? `<span class="muted small">${undated.length} ${undated.length === 1 ? "enlace no tiene" : "enlaces no tienen"} fecha de publicación y ${undated.length === 1 ? "va" : "van"} al final.${ytUndated ? " A los videos de YouTube se la agrega «Enriquecer ahora» en Ajustes." : ""}</span>` : ""}
+    </div>`;
+  }
+  function bindSort() { const s = $("#sortSel"); if (s) s.onchange = () => { state.sort = own(SORTS, s.value) ? s.value : "recent"; renderGroups(); }; }
 
   /* ---------- Íconos y colores de las colecciones ---------- */
   const ICONS = {
@@ -428,7 +533,7 @@
     audiolibros: { src: "icons/audiolibros.png", glow: "#6498c8" },
   };
   const iconKey = (name) => fold(name).replace(/[^a-z0-9]/g, "");
-  const customIcon = (name) => CUSTOM_ICONS[iconKey(name)] || null;
+  const customIcon = (name) => { const k = iconKey(name); return own(CUSTOM_ICONS, k) ? CUSTOM_ICONS[k] : null; };
   const TILE_COLORS = ["#60a5fa", "#fb923c", "#4ade80", "#2dd4bf", "#a78bfa", "#f472b6", "#facc15", "#38bdf8", "#f87171", "#c084fc", "#a3e635", "#fdba74"];
   function iconFor(name) {
     const n = fold(name);
@@ -493,7 +598,7 @@
   const slug = (n) => fold(n).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "coleccion";
   const csvCell = (v) => { let s = String(v ?? ""); if (/^[=+\-@\t\r|%]/.test(s)) s = "'" + s; return /[",\n\r;']/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   function exportItems(list, name, fmt) {
-    const rows = list.map((i) => ({ coleccion: i.collection, red: i.net, url: i.url, titulo: i.title || "", autor: i.author || "", hashtags: tagsOf(i).join(" "), texto: i.text || "", guardado: i.savedAt || "" }));
+    const rows = list.map((i) => ({ coleccion: i.collection, red: i.net, url: i.url, titulo: displayTitle(i), titulo_original: i.title || "", autor: i.author || "", hashtags: tagsOf(i).join(" "), texto: i.text || "", guardado: i.savedAt || "" }));
     if (fmt === "json") download(`colecta-${slug(name)}.json`, JSON.stringify(rows, null, 2), "application/json");
     else if (fmt === "html") {
       const by = new Map(); rows.forEach((r) => { if (!by.has(r.coleccion)) by.set(r.coleccion, []); by.get(r.coleccion).push(r); });
@@ -501,7 +606,7 @@
         [...by].map(([c, rs]) => `  <DT><H3>${esc(c)}</H3>\n  <DL><p>\n` + rs.filter((r) => safeUrl(r.url)).map((r) => `    <DT><A HREF="${esc(r.url)}">${esc(r.titulo || r.url)}</A>`).join("\n") + `\n  </DL><p>`).join("\n") + `\n</DL><p>\n`;
       download(`colecta-${slug(name)}.html`, html, "text/html");
     } else {
-      const head = Object.keys(rows[0] || { coleccion: "", red: "", url: "", titulo: "", autor: "", hashtags: "", texto: "", guardado: "" });
+      const head = Object.keys(rows[0] || { coleccion: "", red: "", url: "", titulo: "", titulo_original: "", autor: "", hashtags: "", texto: "", guardado: "" });
       download(`colecta-${slug(name)}.csv`, "\ufeff" + [head.join(","), ...rows.map((r) => head.map((h) => csvCell(r[h])).join(","))].join("\n"), "text/csv");
     }
     toast(`Exportaste <b>${list.length}</b> ${list.length === 1 ? "enlace" : "enlaces"} de <b>«${esc(name)}»</b> en ${fmt.toUpperCase()}.`);
@@ -581,7 +686,8 @@
     </li>`;
   }
 
-  function renderGroups() {
+  function renderGroups() { drawGroups(); syncNav(); }
+  function drawGroups() {
     const ts = terms(state.query);
     const all = buildGroups();
     $("#groupCount").textContent = all.length;
@@ -616,6 +722,7 @@
 
   function renderResults(list, ts, all) {
     const d = $("#detail");
+    list = sortItems(list);
     const scope = state.selected ? (all.find((g) => g.key === state.selected) || {}).name : null;
     const nameOf = (i) => (all.find((g) => g.key === P.normalizeName(i.collection)) || {}).name || i.collection;
     d.innerHTML = `
@@ -624,6 +731,7 @@
         <p class="muted">para «${esc(state.query.trim())}»${scope ? " en " + esc(scope) + " · tocá la colección de nuevo para ver todas" : " en todas tus colecciones"}</p>
       </div>
       <div class="coll-actions"><button class="btn sm ghost" id="clearSearch" type="button">Limpiar búsqueda</button></div></header>
+      ${list.length ? sortBar(list) : ""}
       <ul class="items">
         ${list.slice(0, 300).map((i) => {
           const tags = tagsOf(i);
@@ -631,7 +739,7 @@
           return `<li class="item">
             ${i.thumb ? `<img class="thumb" src="${esc(safeUrl(i.thumb) || "")}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ""}
             <div class="ibody">
-              <a href="${esc(safeUrl(i.url) || "#")}" target="_blank" rel="noopener noreferrer" class="ititle">${highlight(i.title || shortUrl(i.url), ts)}</a>
+              <a href="${esc(safeUrl(i.url) || "#")}" target="_blank" rel="noopener noreferrer" class="ititle" data-id="${esc(i.id || "")}"${originalTip(i)}>${highlight(displayTitle(i), ts)}</a>
               <div class="imeta"><span class="coll-chip" style="--glow:${colorFor(nameOf(i))}">${esc(nameOf(i))}</span>${i.author ? " · " + highlight(i.author, ts) : ""}</div>
               ${snip ? `<p class="isnip">${highlight(snip, ts)}</p>` : ""}${moreLink(i)}
               <div class="itags">${tags.map((t) => `<span class="tag sm">${highlight(t, ts)}</span>`).join("")}</div>
@@ -640,14 +748,15 @@
       </ul>
       ${list.length > 300 ? `<p class="muted pad">Se muestran los primeros 300. Agregá otra palabra para afinar.</p>` : ""}`;
     $("#clearSearch").onclick = () => { $("#search").value = ""; state.query = ""; state.selected = null; renderGroups(); };
+    bindSort();
   }
 
   function renderDetail(g, idx) {
     const d = $("#detail");
     let list = g.items;
     if (state.tagFilter) list = list.filter((i) => tagsOf(i).includes(state.tagFilter));
+    list = sortItems(list);
     d.innerHTML = `
-      <button class="back" id="backBtn" type="button">← Todas las colecciones</button>
       <header class="dhead banner key-banner" style="--glow:${colorFor(g.name)}">
         <div class="banner-id">
           ${customIcon(g.name) ? `<img class="banner-img" src="${esc(customIcon(g.name).src)}" alt="" />` : svgIcon(g.name, "banner-icon")}
@@ -667,6 +776,7 @@
         ${g.tags.length ? g.tags.slice(0, 30).map(([t, c]) => `<button class="tag ${state.tagFilter === t ? "active" : ""}" data-tag="${esc(t)}">${esc(t)} <small>${c}</small></button>`).join("")
           : `<span class="muted">Aún no hay hashtags en esta colección.</span>`}
       </div>
+      ${sortBar(list)}
       <ul class="items">
         ${list.map((i) => {
           const tags = tagsOf(i);
@@ -674,19 +784,37 @@
           return `<li class="item">
             ${i.thumb ? `<img class="thumb" src="${esc(safeUrl(i.thumb) || "")}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ""}
             <div class="ibody">
-              <a href="${esc(safeUrl(i.url) || "#")}" target="_blank" rel="noopener noreferrer" class="ititle">${esc(i.title || shortUrl(i.url))}</a>
+              <a href="${esc(safeUrl(i.url) || "#")}" target="_blank" rel="noopener noreferrer" class="ititle" data-id="${esc(i.id || "")}"${originalTip(i)}>${esc(displayTitle(i))}</a>
               <div class="imeta">${[i.author ? esc(i.author) : "", i.savedAt ? new Date(i.savedAt).toLocaleDateString("es-AR") : ""].filter(Boolean).join(" · ")}</div>
               <div class="itags">${tags.map((t) => `<span class="tag sm">${esc(t)}</span>`).join("")}${kw.map((k) => `<span class="kw">${esc(k)}</span>`).join("")}</div>
               ${moreLink(i)}
             </div>
           </li>`; }).join("") || `<li class="muted pad">No hay enlaces con este filtro.</li>`}
       </ul>`;
-    $("#backBtn").onclick = () => { state.selected = null; state.tagFilter = null; renderGroups(); };
     $("#renameBtn").onclick = () => askRename(g);
     $("#exportBtn").onclick = () => askExport(g.items, g.name);
     $("#deleteBtn").onclick = () => askDelete(g);
     $$(".tagcloud .tag", d).forEach((b) => (b.onclick = () => { state.tagFilter = state.tagFilter === b.dataset.tag ? null : b.dataset.tag; renderDetail(g, idx); }));
+    bindSort();
   }
+  /* ---------- Volver atrás: flecha arriba a la izquierda y botón «atrás» del teléfono o del navegador ---------- */
+  // Al entrar a una colección se agrega una entrada al historial; así el gesto «atrás» de Android vuelve a la lista en vez de cerrar la app
+  function inDetail() { return state.view === "groups" && !!state.selected && !terms(state.query).length && !$("#detail").hidden; }
+  function syncNav() {
+    const on = inDetail(), pushed = !!(history.state && history.state.colectaDetail);
+    $("#topBack").hidden = !on;
+    if (on && !pushed) history.pushState({ colectaDetail: true }, "");
+    else if (!on && pushed) history.back();
+  }
+  function closeDetail() { state.selected = null; state.tagFilter = null; renderGroups(); }
+  $("#topBack").onclick = closeDetail;
+  window.addEventListener("popstate", () => {
+    if (history.state && history.state.colectaDetail) { if (!inDetail()) history.back(); return; } // «adelante» sin colección abierta
+    if (inDetail()) closeDetail();
+  });
+  // Al recargar estando dentro de una colección, el historial conserva la marca: se limpia
+  if (history.state && history.state.colectaDetail) history.replaceState(null, "");
+
   async function renameCollection(g, name) {
     if (!name || name === g.name) return;
     const target = buildGroups().find((x) => P.normalizeName(x.name) === P.normalizeName(name) && x.key !== g.key);
@@ -729,7 +857,6 @@
     return i.truncated && u ? `<a class="more-link" href="${esc(u)}" target="_blank" rel="noopener noreferrer">Ver más…</a>` : "";
   }
   document.addEventListener("error", (e) => { const t = e.target; if (t && t.tagName === "IMG" && t.classList.contains("thumb")) t.remove(); }, true);
-  function shortUrl(u) { try { const x = new URL(u); return x.hostname.replace("www.", "") + x.pathname.slice(0, 40); } catch { return u; } }
 
   const setPh = () => ($("#search").placeholder = matchMedia("(max-width: 640px)").matches ? "Buscar en tus guardados" : "Buscar en publicaciones, videos y #hashtags");
   setPh(); matchMedia("(max-width: 640px)").addEventListener("change", setPh);
@@ -746,10 +873,15 @@
     if (yt) await enrichYouTube(yt, el);
     if (meta) await enrichMeta(meta, el);
     updateStatus(); await persist(items.filter((i) => i.enriched)); log("Listo. Cambios guardados en Supabase.", el);
+    const re = items.filter((i) => i.retitle);
+    re.forEach((i) => delete i.retitle);
+    if (re.some((i) => i.id)) await DB.resetTitles(re.filter((i) => i.id).map((i) => i.id)).catch((e) => console.error(e));
+    curateTitles();
   };
 
   async function enrichYouTube(key, el) {
-    const todo = items.filter((i) => i.net === "youtube" && !i.enriched);
+    // También los ya enriquecidos sin fecha de publicación (los del marcador anterior a la versión 3.2)
+    const todo = items.filter((i) => i.net === "youtube" && (!i.enriched || !hasDate(i)));
     const ids = [...new Set(todo.map((i) => i.videoId).filter(okVideoId))];
     log(`YouTube: ${ids.length} videos por enriquecer…`, el);
     for (let k = 0; k < ids.length; k += 50) {
@@ -758,11 +890,16 @@
         const r = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${encodeURIComponent(batch.join(","))}&key=${encodeURIComponent(key)}`);
         const j = await r.json();
         if (j.error) { console.error(j.error); log("✗ YouTube rechazó la consulta. Revisá que la clave sea válida y tenga habilitada la API de YouTube.", el); return; }
-        const byId = Object.fromEntries((j.items || []).map((v) => [v.id, v.snippet]));
+        const byId = new Map((j.items || []).map((v) => [v.id, v.snippet]));
         todo.filter((i) => batch.includes(i.videoId)).forEach((i) => {
-          const s = byId[i.videoId];
+          const s = byId.get(i.videoId);
+          const had = i.enriched;
           i.enriched = true;
           if (!s) { i.title = i.title || "(video no disponible)"; return; }
+          const pub = Date.parse(s.publishedAt);
+          if (Number.isFinite(pub) && !hasDate(i)) i.savedAt = pub;
+          if (had) return; // ya tenía título y descripción: solo faltaba la fecha
+          i.shortTitle = ""; i.retitle = true; // contenido nuevo: el título de la IA se vuelve a escribir
           i.title = clip(s.title, LIMITS.title); i.author = clip(s.channelTitle, LIMITS.author); i.text = s.description || "";
           i.thumb = safeUrl(s.thumbnails?.medium?.url || s.thumbnails?.default?.url) || undefined;
           const fromTags = (s.tags || []).slice(0, 8).map((t) => "#" + t.toLowerCase().replace(/\s+/g, ""));
@@ -793,15 +930,11 @@
     log(`  ✓ ${ok}/${todo.length} publicaciones leídas`, el);
   }
 
-  /* ---------- Exportar ---------- */
-  function download(name, content, type) {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([content], { type })); a.download = name; a.click();
-  }
-  $("#exportJson").onclick = () => download("colecta.json", JSON.stringify(buildGroups().map((g) => ({ coleccion: g.name, redes: g.nets, hashtags: g.tags.slice(0, 20).map(([t]) => t), enlaces: g.items.map((i) => ({ red: i.net, url: i.url, titulo: i.title, autor: i.author, hashtags: tagsOf(i) })) })), null, 2), "application/json");
+  /* ---------- Exportar (Ajustes) ---------- */
+  $("#exportJson").onclick = () => download("colecta.json", JSON.stringify(buildGroups().map((g) => ({ coleccion: g.name, redes: g.nets, hashtags: g.tags.slice(0, 20).map(([t]) => t), enlaces: g.items.map((i) => ({ red: i.net, url: i.url, titulo: displayTitle(i), titulo_original: i.title, autor: i.author, hashtags: tagsOf(i) })) })), null, 2), "application/json");
   $("#exportCsv").onclick = () => {
-    const rows = [["coleccion", "red", "url", "titulo", "autor", "hashtags"]];
-    buildGroups().forEach((g) => g.items.forEach((i) => rows.push([g.name, i.net, i.url, i.title, i.author, tagsOf(i).join(" ")])));
+    const rows = [["coleccion", "red", "url", "titulo", "titulo_original", "autor", "hashtags"]];
+    buildGroups().forEach((g) => g.items.forEach((i) => rows.push([g.name, i.net, i.url, displayTitle(i), i.title, i.author, tagsOf(i).join(" ")])));
     download("colecta.csv", "\ufeff" + rows.map((r) => r.map(csvCell).join(",")).join("\n"), "text/csv");
   };
 
@@ -916,7 +1049,7 @@
         if (!pkg) return;
         got = true;
         try { opener.postMessage({ type: "colecta:received" }, e.origin); } catch {}
-        receive(pkg, "desde " + (NETS[pkg.source] || "la red social"));
+        receive(pkg, "desde " + (own(NETS, pkg.source) ? NETS[pkg.source] : "la red social"));
       });
       const ping = setInterval(() => { if (got || ++tries > 40) return clearInterval(ping); try { opener.postMessage({ type: "colecta:ready" }, "*"); } catch { clearInterval(ping); } }, 300);
     } else {
@@ -968,12 +1101,12 @@
     const name = clip(meta.items?.[0]?.snippet?.title || "Lista de YouTube", LIMITS.coll);
     const out = []; let page = "";
     do {
-      const j = await (await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(list)}&key=${encodeURIComponent(key)}${page ? "&pageToken=" + encodeURIComponent(page) : ""}`)).json();
+      const j = await (await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=50&playlistId=${encodeURIComponent(list)}&key=${encodeURIComponent(key)}${page ? "&pageToken=" + encodeURIComponent(page) : ""}`)).json();
       if (j.error) throw new Error("youtube:" + (j.error.message || ""));
       (j.items || []).forEach((it) => {
         const s = it.snippet || {}, v = s.resourceId?.videoId;
         if (!okVideoId(v) || /^(Private|Deleted) video$/.test(s.title || "")) return;
-        out.push({ net: "youtube", sourceId: "yt:" + list, collection: name, url: "https://www.youtube.com/watch?v=" + v, videoId: v, title: s.title, author: s.videoOwnerChannelTitle || "", text: s.description || "", thumb: s.thumbnails?.medium?.url, hashtags: P.extractHashtags((s.title || "") + " " + (s.description || "")), savedAt: Date.parse(s.publishedAt) || null, enriched: true });
+        out.push({ net: "youtube", sourceId: "yt:" + list, collection: name, url: "https://www.youtube.com/watch?v=" + v, videoId: v, title: s.title, author: s.videoOwnerChannelTitle || "", text: s.description || "", thumb: s.thumbnails?.medium?.url, hashtags: P.extractHashtags((s.title || "") + " " + (s.description || "")), savedAt: Date.parse(it.contentDetails?.videoPublishedAt) || null, enriched: true });
       });
       page = j.nextPageToken || "";
     } while (page && out.length < LIMITS.items);
@@ -1018,6 +1151,36 @@
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
 
+  /* ---------- Verificación anti-bots (Cloudflare Turnstile) ---------- */
+  // En localhost va la clave de prueba de Cloudflare, que siempre aprueba: la real solo funciona en marianittem78.github.io
+  const CAPTCHA_KEY = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? "1x00000000000000000000AA" : "0x4AAAAAAFNtkL5G3ZX4cL96";
+  const captcha = { id: null, token: "", waiters: [], authKnown: false };
+  function setCaptchaToken(t) { captcha.token = t || ""; captcha.waiters.splice(0).forEach((f) => f(captcha.token)); }
+  // Se dibuja solo cuando se sabe que no hay sesión (el formulario está a la vista)
+  function showCaptcha() {
+    if (!captcha.authKnown || currentUser || !window.turnstile) return;
+    if (captcha.id !== null) return resetCaptcha();
+    captcha.id = turnstile.render("#captcha", {
+      sitekey: CAPTCHA_KEY, appearance: "interaction-only", theme: root.dataset.theme === "dark" ? "dark" : "light",
+      callback: setCaptchaToken,
+      "expired-callback": () => { captcha.token = ""; },
+      "error-callback": () => { captcha.token = ""; },
+    });
+  }
+  window.colectaCaptchaListo = showCaptcha; // lo llama api.js de Turnstile al cargar
+  // Cada token sirve para un solo intento: después de usarlo se pide otro
+  function resetCaptcha() { captcha.token = ""; if (window.turnstile && captcha.id !== null) turnstile.reset(captcha.id); }
+  // Sin Turnstile (bloqueado o sin conexión) se sigue sin token y decide Supabase
+  function getCaptcha(ms = 20000) {
+    if (captcha.token || captcha.id === null) return Promise.resolve(captcha.token || undefined);
+    return new Promise((res) => {
+      const done = (t) => { clearTimeout(timer); res(t || undefined); };
+      const timer = setTimeout(() => { captcha.waiters = captcha.waiters.filter((f) => f !== done); res(undefined); }, ms);
+      captcha.waiters.push(done);
+    });
+  }
+  const CAPTCHA_MSG = "No pudimos comprobar que no seas un robot. Esperá unos segundos y probá de nuevo; si sigue fallando, recargá la página.";
+
   /* ---------- Sesión ---------- */
   let authMode = "login";
   function setAuthMode(m) {
@@ -1035,17 +1198,23 @@
     e.preventDefault();
     const email = $("#authEmail").value.trim(), pass = $("#authPass").value, msg = $("#authMsg"), btn = $("#authSubmit");
     msg.className = "auth-msg"; btn.disabled = true;
+    let used = false;
     try {
-      if (authMode === "login") await DB.signIn(email, pass);
+      if (authMode === "signup" && (pass.length < 10 || !/[a-z]/.test(pass) || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass))) throw new Error("La contraseña debe tener al menos 10 caracteres, con minúsculas, mayúsculas y números.");
+      if (!captcha.token && captcha.id !== null) msg.textContent = "Comprobando que no seas un robot…";
+      const token = await getCaptcha();
+      msg.textContent = ""; used = true;
+      if (authMode === "login") await DB.signIn(email, pass, token);
       else {
-        if (pass.length < 10 || !/[a-z]/.test(pass) || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass)) throw new Error("La contraseña debe tener al menos 10 caracteres, con minúsculas, mayúsculas y números.");
-        const r = await DB.signUp(email, pass);
+        const r = await DB.signUp(email, pass, token);
         if (r.needsConfirm) { msg.textContent = "Te enviamos un email de confirmación. Abrilo y después ingresá acá. Si no llega en unos minutos, revisá la carpeta de spam."; msg.classList.add("ok"); setAuthMode("login"); $("#authMsg").textContent = "Revisá tu correo (también spam) para confirmar la cuenta y luego ingresá."; $("#authMsg").classList.add("ok"); }
       }
     } catch (err) {
       const m = err.message || "";
       const notConfirmed = /not confirmed/i.test(m);
-      const t = /invalid login/i.test(m) ? "Email o contraseña incorrectos."
+      const t = /^La contraseña/.test(m) ? m
+        : /captcha/i.test(m) ? CAPTCHA_MSG
+        : /invalid login/i.test(m) ? "Email o contraseña incorrectos."
         : notConfirmed ? "Tenés que confirmar tu email antes de ingresar."
         : /already registered/i.test(m) ? "Ese email ya tiene cuenta. Ingresá."
         : /rate limit|too many|429/i.test(m) ? "Se alcanzó el límite de correos por hora del servidor. Probá de nuevo en un rato."
@@ -1061,12 +1230,13 @@
         b.type = "button"; b.className = "linkbtn"; b.textContent = " Reenviar el correo de confirmación";
         b.onclick = async () => {
           b.disabled = true;
-          try { await DB.resendConfirm(email); msg.textContent = "Te reenviamos el correo a " + email + ". Revisá también la carpeta de spam."; msg.classList.remove("bad"); msg.classList.add("ok"); }
-          catch (e2) { msg.textContent = /rate limit|too many|429|security purposes/i.test(e2.message) ? "Esperá un minuto antes de pedir otro correo." : friendlyErr(e2); }
+          try { await DB.resendConfirm(email, await getCaptcha()); msg.textContent = "Te reenviamos el correo a " + email + ". Revisá también la carpeta de spam."; msg.classList.remove("bad"); msg.classList.add("ok"); }
+          catch (e2) { msg.textContent = /rate limit|too many|429|security purposes/i.test(e2.message) ? "Esperá un minuto antes de pedir otro correo." : /captcha/i.test(e2.message) ? CAPTCHA_MSG : friendlyErr(e2); }
+          finally { resetCaptcha(); }
         };
         msg.appendChild(b);
       }
-    } finally { btn.disabled = false; }
+    } finally { btn.disabled = false; if (used) resetCaptcha(); }
   };
   $("#logoutBtn").onclick = () => DB.signOut();
 
@@ -1091,16 +1261,20 @@
     state.selected = null; state.tagFilter = null;
     show("groups");
     runPending();
+    curateTitles();
   }
   function onLogout() {
     currentUser = null; items = []; synonymsText = ""; sourceMap = {}; state.selected = null;
+    titling.off = false; titling.failed.clear();
     document.body.classList.remove("authed");
     ["#ytKey", "#metaToken", "#authPass"].forEach((s) => ($(s).value = ""));
-    $("#log").textContent = ""; updateStatus();
+    $("#log").textContent = ""; updateStatus(); syncNav();
   }
   DB.onAuth((user) => {
+    captcha.authKnown = true;
     if (user && user.id !== currentUser?.id) { currentUser = user; setTimeout(() => onLogin(user), 0); }
     else if (!user && currentUser) onLogout();
+    if (!user) showCaptcha();
   });
   updateStatus();
 })();
