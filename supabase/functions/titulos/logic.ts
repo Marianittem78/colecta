@@ -82,8 +82,9 @@ export function pulirTitulo(s: unknown): string {
     .replace(/^¡+/u, "")
     .trim();
   if (t.length > 80) t = t.slice(0, 80).replace(/\s+\S*$/, "");
-  const i = t.search(/\p{L}/u);
-  if (i >= 0) t = t.slice(0, i) + t[i].toLocaleUpperCase("es") + t.slice(i + 1);
+  // Mayúscula inicial solo si empieza con letra (después de ¿ o comillas), no en «10 trucos…»
+  const i = (t.match(/^[¿«"“'(]*/) ?? [""])[0].length;
+  if (/\p{L}/u.test(t[i] ?? "")) t = t.slice(0, i) + t[i].toLocaleUpperCase("es") + t.slice(i + 1);
   return t;
 }
 
