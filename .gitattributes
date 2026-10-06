@@ -1,0 +1,4 @@
+# Saltos de línea LF siempre: app.js verifica el SHA-256 exacto de bookmarklet.js
+* text=auto eol=lf
+*.png binary
+*.apk binary
