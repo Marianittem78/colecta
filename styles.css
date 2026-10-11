@@ -151,6 +151,12 @@ body.authed .auth { display: none; }
 .auth-msg.bad { color: var(--yt); }
 .auth-msg.ok { color: var(--accent); }
 .auth-switch { color: var(--muted); text-align: center; }
+.oauth { display: grid; gap: 12px; }
+.oauth[hidden], .forgot[hidden] { display: none; }
+.auth-card .google-btn { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.auth-card .auth-or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: var(--text-xs); }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.forgot { justify-self: end; margin-top: -4px; font-size: var(--text-xs); font-weight: 500; }
 .auth-switch button { color: var(--accent); font-weight: 700; text-decoration: underline; }
 .topbar .user { display: flex; align-items: center; gap: 12px; font-size: var(--text-xs); color: var(--muted); }
 body:not(.authed) .topbar .icon-btn { margin-left: auto; }

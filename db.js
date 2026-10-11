@@ -1,4 +1,4 @@
-/* Colecta — capa de datos con Supabase (auth email+contraseña, tablas items y settings con RLS) */
+/* Colecta — capa de datos con Supabase (auth email+contraseña o Google, tablas items y settings con RLS) */
 (function () {
   const SUPABASE_URL = "https://rlbxanqztphlwqivahzx.supabase.co";
   const SUPABASE_KEY = "sb_publishable_vGH1wqw-NJZZ6LAmpauqvQ_J4Ti9TY_";
@@ -15,6 +15,18 @@
   const published = location.protocol === "https:" && /\.github\.io$/.test(location.hostname);
   let storage = memoryStorage;
   if (published) { try { const ls = window["local" + "Storage"]; ls.setItem("colecta:t", "1"); ls.removeItem("colecta:t"); storage = ls; } catch { storage = memoryStorage; } }
+
+  // Lo que trae la dirección al volver de un enlace de Supabase (recuperar contraseña, enlace vencido, Google cancelado).
+  // Se lee antes de crear el cliente, que procesa y limpia la sesión del enlace; los errores se sacan de la barra acá.
+  const urlParams = new URLSearchParams(location.hash.slice(1) + "&" + location.search.slice(1));
+  const fromUrl = { recovery: urlParams.get("type") === "recovery", error: urlParams.get("error_code") || urlParams.get("error") || "" };
+  if (fromUrl.error) {
+    const clean = new URLSearchParams(location.search);
+    ["error", "error_code", "error_description"].forEach((k) => clean.delete(k));
+    history.replaceState(history.state, "", location.pathname + (clean.toString() ? "?" + clean : ""));
+  }
+  // A dónde vuelve la persona desde el correo o desde Google (conserva ?url= de Compartir)
+  const here = () => location.href.split("#")[0];
 
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { storage, storageKey: "colecta-auth", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
@@ -51,20 +63,45 @@
 
   window.DB = {
     client: sb,
-    onAuth(cb) { sb.auth.onAuthStateChange((_e, session) => cb(session?.user || null)); },
+    fromUrl,
+    onAuth(cb) { sb.auth.onAuthStateChange((event, session) => cb(session?.user || null, event)); },
     // captchaToken: token de Cloudflare Turnstile (Supabase lo exige si la protección anti-bots está activa)
     async signIn(email, password, captchaToken) {
       const { error } = await sb.auth.signInWithPassword({ email, password, options: { captchaToken } });
       if (error) throw error;
     },
     async signUp(email, password, captchaToken) {
-      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split("#")[0], captchaToken } });
+      const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: here(), captchaToken } });
       if (error) throw error;
+      // Si el email ya tiene una cuenta confirmada, Supabase responde como si fuera nueva pero NO manda ningún correo
+      // (para no revelar qué emails están registrados). La señal es que el usuario vuelve sin identidades.
+      if (data.user && Array.isArray(data.user.identities) && !data.user.identities.length) throw new Error("User already registered");
       return { needsConfirm: !data.session };
     },
     async resendConfirm(email, captchaToken) {
-      const { error } = await sb.auth.resend({ type: "signup", email, options: { emailRedirectTo: location.href.split("#")[0], captchaToken } });
+      const { error } = await sb.auth.resend({ type: "signup", email, options: { emailRedirectTo: here(), captchaToken } });
       if (error) throw error;
+    },
+    // Manda el correo con el enlace para elegir una contraseña nueva (si el email no tiene cuenta, no manda nada y no avisa)
+    async resetPassword(email, captchaToken) {
+      const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname, captchaToken });
+      if (error) throw error;
+    },
+    async setPassword(password) {
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) throw error;
+    },
+    // Va a Google y vuelve con la sesión en la dirección (la toma detectSessionInUrl). Si el email ya tenía cuenta,
+    // Supabase le suma Google a esa misma cuenta.
+    async signInWithGoogle() {
+      const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: here(), queryParams: { prompt: "select_account" } } });
+      if (error) throw error;
+    },
+    // Proveedores habilitados en Supabase: el botón de Google aparece solo cuando Google está activo
+    async providers() {
+      const r = await fetch(SUPABASE_URL + "/auth/v1/settings", { headers: { apikey: SUPABASE_KEY } });
+      if (!r.ok) throw new Error("auth_settings " + r.status);
+      return (await r.json()).external || {};
     },
     async signOut() { await sb.auth.signOut(); },
 

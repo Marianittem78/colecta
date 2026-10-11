@@ -1314,6 +1314,8 @@
   const CAPTCHA_MSG = "No pudimos comprobar que no seas un robot. Esperá unos segundos y probá de nuevo; si sigue fallando, recargá la página.";
 
   /* ---------- Sesión ---------- */
+  const strongPass = (p) => p.length >= 10 && /[a-z]/.test(p) && /[A-Z]/.test(p) && /[0-9]/.test(p);
+  const PASS_RULE = "La contraseña debe tener al menos 10 caracteres, con minúsculas, mayúsculas y números.";
   let authMode = "login";
   function setAuthMode(m) {
     authMode = m;
@@ -1322,33 +1324,41 @@
     $("#authSwitch").innerHTML = m === "login" ? '¿No tenés cuenta? <button type="button" id="toSignup">Registrate</button>' : '¿Ya tenés cuenta? <button type="button" id="toLogin">Ingresá</button>';
     $("#authPass").autocomplete = m === "login" ? "current-password" : "new-password";
     $("#passHint").hidden = m === "login";
+    $("#forgotBtn").hidden = m !== "login";
     $("#authMsg").textContent = "";
     ($("#toSignup") || $("#toLogin")).onclick = () => setAuthMode(m === "login" ? "signup" : "login");
   }
   setAuthMode("login");
+  // Vuelta de un enlace de Supabase con error: venció o ya se usó, o se canceló el ingreso con Google
+  if (DB.fromUrl.error) {
+    $("#authMsg").textContent = /expired/i.test(DB.fromUrl.error) ? "Ese enlace venció o ya se usó. Pedí uno nuevo." : "No se completó el ingreso. Probá de nuevo.";
+    $("#authMsg").className = "auth-msg bad";
+  }
   $("#authForm").onsubmit = async (e) => {
     e.preventDefault();
     const email = $("#authEmail").value.trim(), pass = $("#authPass").value, msg = $("#authMsg"), btn = $("#authSubmit");
     msg.className = "auth-msg"; btn.disabled = true;
     let used = false;
     try {
-      if (authMode === "signup" && (pass.length < 10 || !/[a-z]/.test(pass) || !/[A-Z]/.test(pass) || !/[0-9]/.test(pass))) throw new Error("La contraseña debe tener al menos 10 caracteres, con minúsculas, mayúsculas y números.");
+      if (authMode === "signup" && !strongPass(pass)) throw new Error(PASS_RULE);
       if (!captcha.token && captcha.id !== null) msg.textContent = "Comprobando que no seas un robot…";
       const token = await getCaptcha();
       msg.textContent = ""; used = true;
       if (authMode === "login") await DB.signIn(email, pass, token);
       else {
         const r = await DB.signUp(email, pass, token);
-        if (r.needsConfirm) { msg.textContent = "Te enviamos un email de confirmación. Abrilo y después ingresá acá. Si no llega en unos minutos, revisá la carpeta de spam."; msg.classList.add("ok"); setAuthMode("login"); $("#authMsg").textContent = "Revisá tu correo (también spam) para confirmar la cuenta y luego ingresá."; $("#authMsg").classList.add("ok"); }
+        if (r.needsConfirm) { setAuthMode("login"); msg.textContent = "Te mandamos un correo a " + email + " para confirmar la cuenta. Abrilo (si no está, revisá spam) y después ingresá acá."; msg.classList.add("ok"); }
       }
     } catch (err) {
       const m = err.message || "";
       const notConfirmed = /not confirmed/i.test(m);
+      // Cuenta ya confirmada: Supabase no manda correo, así que se pasa a «Ingresar» y se ofrece recuperar la contraseña
+      if (/already registered/i.test(m) && authMode === "signup") setAuthMode("login");
       const t = /^La contraseña/.test(m) ? m
         : /captcha/i.test(m) ? CAPTCHA_MSG
-        : /invalid login/i.test(m) ? "Email o contraseña incorrectos."
+        : /invalid login/i.test(m) ? "Email o contraseña incorrectos. Si no la recordás, tocá «¿Olvidaste tu contraseña?»."
         : notConfirmed ? "Tenés que confirmar tu email antes de ingresar."
-        : /already registered/i.test(m) ? "Ese email ya tiene cuenta. Ingresá."
+        : /already registered/i.test(m) ? "Ese email ya tiene una cuenta. Ingresá con tu contraseña o, si no la recordás, tocá «¿Olvidaste tu contraseña?»."
         : /rate limit|too many|429/i.test(m) ? "Se alcanzó el límite de correos por hora del servidor. Probá de nuevo en un rato."
         : /sending|smtp|confirmation email/i.test(m) ? "No se pudo enviar el correo de confirmación. Probá de nuevo en unos minutos."
         : /not authorized/i.test(m) ? "El servidor de correo todavía no puede enviar a esta dirección. Avisale al administrador de Colecta."
@@ -1371,6 +1381,56 @@
     } finally { btn.disabled = false; if (used) resetCaptcha(); }
   };
   $("#logoutBtn").onclick = () => DB.signOut();
+
+  // Recuperar la contraseña: llega un correo con un enlace que abre Colecta con la sesión iniciada y pide la nueva
+  $("#forgotBtn").onclick = async () => {
+    const email = $("#authEmail").value.trim(), msg = $("#authMsg"), b = $("#forgotBtn");
+    msg.className = "auth-msg";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.textContent = "Escribí tu email arriba y tocá de nuevo «¿Olvidaste tu contraseña?»."; msg.classList.add("bad"); $("#authEmail").focus(); return; }
+    b.disabled = true;
+    try {
+      if (!captcha.token && captcha.id !== null) msg.textContent = "Comprobando que no seas un robot…";
+      await DB.resetPassword(email, await getCaptcha());
+      msg.textContent = "Si " + email + " tiene una cuenta, te llega un correo con un enlace para elegir una contraseña nueva. Revisá también la carpeta de spam.";
+      msg.classList.add("ok");
+    } catch (err) {
+      const m = err.message || "";
+      msg.textContent = /rate limit|too many|429|security purposes/i.test(m) ? "Esperá un minuto antes de pedir otro correo." : /captcha/i.test(m) ? CAPTCHA_MSG : friendlyErr(err);
+      msg.classList.add("bad");
+    } finally { b.disabled = false; resetCaptcha(); }
+  };
+  async function askNewPassword(note = "") {
+    const body = await dialog({
+      title: "Elegí una contraseña nueva",
+      body: `<p class="muted">Entraste con el enlace para recuperar la contraseña. Escribí la nueva para usarla la próxima vez.</p>
+        <input type="email" autocomplete="username" value="${esc(currentUser?.email || "")}" hidden />
+        <label class="field"><span>Contraseña nueva</span><input id="newPass" class="input" type="password" autocomplete="new-password" /></label>
+        <p class="muted small">Mínimo 10 caracteres, con minúsculas, mayúsculas y números.</p>
+        <p id="newPassMsg" class="auth-msg bad">${esc(note)}</p>`,
+      ok: "Guardar", cancel: "Ahora no",
+      validate: (b) => strongPass($("#newPass", b).value) || (($("#newPassMsg", b).textContent = PASS_RULE), false),
+    });
+    if (!body) return;
+    try {
+      await DB.setPassword($("#newPass", body).value);
+      toast("Listo: guardaste tu contraseña nueva.");
+    } catch (err) {
+      const m = err.message || "";
+      askNewPassword(/different from the old|same/i.test(m) ? "Tiene que ser distinta de la anterior."
+        : /weak|should|at least/i.test(m) ? "La contraseña no cumple los requisitos de seguridad." : friendlyErr(err));
+    }
+  }
+
+  // Ingresar con Google (el botón aparece solo si Google está habilitado en Supabase)
+  DB.providers().then((p) => { $("#oauthBox").hidden = !p.google; }).catch(() => {});
+  $("#googleBtn").onclick = async () => {
+    const b = $("#googleBtn"), msg = $("#authMsg");
+    b.disabled = true; msg.className = "auth-msg"; msg.textContent = "";
+    try { await DB.signInWithGoogle(); } // la página se va a Google y vuelve con la sesión iniciada
+    catch (err) { msg.textContent = friendlyErr(err); msg.classList.add("bad"); b.disabled = false; }
+  };
+  // Si la persona vuelve desde Google con «atrás», el botón no queda trabado
+  window.addEventListener("pageshow", () => { $("#googleBtn").disabled = false; });
 
   async function onLogin(user) {
     currentUser = user;
@@ -1410,11 +1470,14 @@
     ["#ytKey", "#metaToken", "#authPass"].forEach((s) => ($(s).value = ""));
     $("#log").textContent = ""; updateStatus(); syncNav();
   }
-  DB.onAuth((user) => {
+  let recovering = DB.fromUrl.recovery; // se entró con el enlace de «¿Olvidaste tu contraseña?»
+  DB.onAuth((user, event) => {
     captcha.authKnown = true;
+    if (event === "PASSWORD_RECOVERY") recovering = true;
     if (user && user.id !== currentUser?.id) { currentUser = user; setTimeout(() => onLogin(user), 0); }
     else if (!user && currentUser) onLogout();
     if (!user) showCaptcha();
+    if (user && recovering) { recovering = false; setTimeout(() => askNewPassword(), 0); }
   });
   updateStatus();
 })();

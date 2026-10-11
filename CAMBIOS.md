@@ -1,5 +1,14 @@
 # Cambios de Colecta
 
+## Ingreso — 11 de octubre de 2026
+
+Cambios solo en la web: la app de Android los toma sin actualizarse.
+
+- **«¿Olvidaste tu contraseña?»** Te llega un correo con un enlace; al abrirlo entrás a Colecta y elegís una contraseña nueva.
+- **Registrarse con un email que ya tiene cuenta** ahora lo dice y te lleva a «Ingresar». Antes decía «te enviamos un email de confirmación», pero ese correo nunca salía, porque la cuenta ya estaba confirmada.
+- **Continuar con Google** (aparece cuando Google esté habilitado en el servidor). Si ya tenías cuenta con ese mismo email, entrás a la misma cuenta.
+- Si abrís un enlace de confirmación o de recuperación vencido, la app avisa que pidas uno nuevo.
+
 ## 1.0.2 — 11 de octubre de 2026
 
 ### Novedades
