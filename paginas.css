@@ -1,0 +1,27 @@
+/* Colecta — estilo de las páginas informativas (acerca, privacidad, condiciones) */
+:root {
+  --bg: #f6f3ee; --surface: #fffdf9; --border: #e2ddd4; --text: #1f1d1a; --muted: #6b655c; --accent: #b4532a;
+  --font-display: "Cabinet Grotesk", "Satoshi", system-ui, sans-serif; --font-body: "Satoshi", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151412; --surface: #1d1b19; --border: #34302b; --text: #ece7df; --muted: #a39b90; --accent: #e07a4b; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--font-body); -webkit-text-size-adjust: 100%; }
+.page { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-family: var(--font-display); font-weight: 800; font-size: 20px; }
+h1 { font-family: var(--font-display); font-size: clamp(30px, 6vw, 42px); line-height: 1.1; letter-spacing: -0.02em; margin: 32px 0 8px; }
+h2 { font-family: var(--font-display); font-size: 22px; line-height: 1.2; margin: 36px 0 8px; }
+p, li { color: var(--text); }
+.muted { color: var(--muted); }
+.lead { font-size: 18px; color: var(--muted); }
+a { color: var(--accent); }
+ul { padding-left: 1.2em; }
+li + li { margin-top: 6px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-top: 16px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.btn { display: inline-block; padding: 12px 20px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none; font-weight: 600; }
+.btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px 16px; }
+footer a { color: var(--muted); }
