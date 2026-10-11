@@ -1,14 +1,23 @@
 # Cambios de Colecta
 
-## Ingreso — 11 de octubre de 2026
+## 1.0.3 — 11 de octubre de 2026
 
-Cambios solo en la web: la app de Android los toma sin actualizarse.
+### Novedades
 
+- **Entrá con Google.** En la pantalla de ingreso está «Continuar con Google». Si ya tenías cuenta con ese mismo email, entrás a tu misma cuenta, con todas tus colecciones.
 - **«¿Olvidaste tu contraseña?»** Te llega un correo con un enlace; al abrirlo entrás a Colecta y elegís una contraseña nueva.
+- **Ícono nuevo de tres anillos**, el mismo logo que ya se veía dentro de la app, ahora también en el teléfono y en la pestaña del navegador.
+- Páginas **Qué es Colecta**, **Política de privacidad** y **Condiciones de uso**, enlazadas al pie de la pantalla de ingreso.
+
+### Correcciones
+
 - **Registrarse con un email que ya tiene cuenta** ahora lo dice y te lleva a «Ingresar». Antes decía «te enviamos un email de confirmación», pero ese correo nunca salía, porque la cuenta ya estaba confirmada.
-- **Continuar con Google** (aparece cuando Google esté habilitado en el servidor). Si ya tenías cuenta con ese mismo email, entrás a la misma cuenta.
 - Si abrís un enlace de confirmación o de recuperación vencido, la app avisa que pidas uno nuevo.
-- Páginas **Qué es Colecta** (`acerca.html`), **Política de privacidad** (`privacidad.html`) y **Condiciones de uso** (`terminos.html`), enlazadas desde la pantalla de ingreso. Google las pide para habilitar el ingreso con Google.
+- Al compartir a Colecta con una colección ya elegida, ya no aparece de más el campo «Nombre de la nueva colección».
+
+### App de Android
+
+- **Versión 1.0.3**, con el ícono nuevo. Se descarga desde <https://marianittem78.github.io/descargar.html> y se instala sobre la versión anterior sin perder nada. Los demás cambios llegan solos, aunque no la actualices.
 
 ## 1.0.2 — 11 de octubre de 2026
 
