@@ -550,6 +550,19 @@
     desarrollopersonal: { src: "icons/desarrollopersonal.png", glow: "#f8b058" },
     dibujo: { src: "icons/dibujo.png", glow: "#f8a070" },
     dropshipping: { src: "icons/dropshipping.png", glow: "#60c878" },
+    fba: { src: "icons/fba.png", glow: "#78b0d0" },
+    amazonfba: { src: "icons/fba.png", glow: "#78b0d0" },
+    libros: { src: "icons/libros.png", glow: "#88c8d0" },
+    footage: { src: "icons/footage.png", glow: "#5090c8" },
+    footageplantillas: { src: "icons/footage.png", glow: "#5090c8" },
+    meditaciones: { src: "icons/meditaciones.png", glow: "#508cc8" },
+    ia: { src: "icons/ia.png", glow: "#5090c8" },
+    inversiones: { src: "icons/inversiones.png", glow: "#88c8d0" },
+    learn: { src: "icons/learn.png", glow: "#78a8d0" },
+    notebooklm: { src: "icons/notebooklm.png", glow: "#78a8d0" },
+    pctips: { src: "icons/pctips.png", glow: "#88c8c8" },
+    plantastips: { src: "icons/plantastips.png", glow: "#88c8d0" },
+    tipsplantas: { src: "icons/plantastips.png", glow: "#88c8d0" },
   };
   const iconKey = (name) => fold(name).replace(/[^a-z0-9]/g, "");
   const customIcon = (name) => { const k = iconKey(name); return own(CUSTOM_ICONS, k) ? CUSTOM_ICONS[k] : null; };
