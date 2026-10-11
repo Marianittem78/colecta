@@ -190,6 +190,14 @@ ul.nets b { color: var(--text); }
 .pick { border-top: 1px solid var(--border); padding-top: 12px; display: grid; gap: 4px; }
 .pick-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: var(--text-sm); }
 .pick-head .muted { font-size: var(--text-xs); }
+.modal-card .actions .btn[hidden] { display: none; }
+/* Lo que se está guardando al compartir desde otra app */
+.share-prev { display: flex; gap: 12px; align-items: center; padding: 12px; margin: 4px 0; border-radius: 12px; border: 1px solid var(--glow); background: color-mix(in srgb, var(--glow) 10%, var(--surface)); }
+.share-prev img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex: none; }
+.share-prev > div { display: grid; gap: 2px; min-width: 0; }
+.share-prev b { overflow-wrap: anywhere; }
+.share-prev small { color: var(--muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.share-net { font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--glow); }
 .pick .field[hidden] { display: none; }
 select.input { appearance: auto; }
 
@@ -422,6 +430,7 @@ mark { background: color-mix(in srgb, var(--color-primary, #c2410c) 22%, transpa
   .modal { align-items: end; padding: 0; }
   .modal-card { width: 100%; max-height: 88vh; border-radius: 18px 18px 0 0; padding: 20px 18px calc(18px + env(safe-area-inset-bottom)); }
   .modal-card .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal-card .actions:has(.btn[hidden]) { grid-template-columns: 1fr; }
   .modal-card .actions .btn { min-height: 44px; justify-content: center; }
   .toasts { bottom: calc(14px + env(safe-area-inset-bottom)); }
   .tile-menu { width: 190px; }

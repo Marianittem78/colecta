@@ -68,14 +68,21 @@
     },
     async signOut() { await sb.auth.signOut(); },
 
+    // Se trae de a 1000 con un orden total (fecha + id): muchos enlaces comparten la misma fecha (se guardan
+    // en lotes) y, ordenando solo por fecha, cada página podía repetir unos y saltear otros.
+    // Además se descartan repetidos y se compara con el total de la base: si no coincide, la carga falla.
     async loadItems() {
-      const all = [];
+      const all = [], seen = new Set();
+      let total = null;
       for (let from = 0; ; from += 1000) {
-        const { data, error } = await sb.from("items").select("*").order("created_at").range(from, from + 999);
+        const { data, error, count } = await sb.from("items").select("*", from ? undefined : { count: "exact" })
+          .order("created_at").order("id").range(from, from + 999);
         if (error) throw error;
-        all.push(...data);
+        if (typeof count === "number") total = count;
+        for (const r of data) if (!seen.has(r.id)) { seen.add(r.id); all.push(r); }
         if (data.length < 1000) break;
       }
+      if (total !== null && all.length !== total) throw new Error("colecta_carga_incompleta: " + all.length + " de " + total);
       return all.map(fromRow);
     },
     // Inserta o actualiza; devuelve las filas con su id

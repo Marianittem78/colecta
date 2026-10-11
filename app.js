@@ -18,6 +18,9 @@
   let synonymsText = "";
   let sourceMap = {}; // "red:idColección" → colección de Colecta elegida
   let currentUser = null;
+  // Hasta que no están en memoria todos los enlaces de la cuenta no se importa ni se modifica nada:
+  // con la lista a medio cargar, una importación o un guardado trabajaban sobre datos incompletos
+  let loaded = false, loadFailed = false;
   let state = { view: "import", selected: null, filter: "all", query: "", netFilter: "all", tagFilter: null, sort: "recent" };
 
   function load(k, d) { try { return JSON.parse(store.get(k)) ?? d; } catch { return d; } }
@@ -67,6 +70,7 @@
     const m = String((err && (err.message || err.details)) || "");
     console.error(err);
     if (/colecta_limit/i.test(m)) return `Llegaste al máximo de ${LIMITS.items} elementos por cuenta.`;
+    if (/colecta_carga_incompleta/i.test(m)) return "No llegaron todos tus enlaces desde el servidor. Probá de nuevo en un momento.";
     if (/violates check constraint|invalid input/i.test(m)) return "Algunos datos no pasaron la validación y no se guardaron.";
     if (/failed to fetch|network|load failed/i.test(m)) return "No hay conexión con el servidor. Revisá tu internet y probá de nuevo.";
     if (/jwt|not authenticated|session/i.test(m)) return "Tu sesión venció. Volvé a ingresar.";
@@ -213,6 +217,12 @@
   }
 
   async function importPackage(pkg) {
+    if (!loaded) {
+      pendingPkg = pkg; // se importa apenas termina la carga (runPending)
+      return toast(loadFailed
+        ? `<p class="toast-title">Primero hay que cargar tus colecciones</p><p>Tocá «Reintentar»: apenas carguen, importo lo que mandaste.</p>`
+        : `<p class="toast-title">Un momento</p><p>Estoy terminando de cargar tus colecciones; importo apenas termine.</p>`, { kind: "warn" });
+    }
     if (!cleanPkg(pkg).items.length) return log("✗ El paquete no trae enlaces para importar.");
     const choices = await askTargets(pkg);
     if (!choices || !choices.length) return log("Importación cancelada.");
@@ -270,7 +280,7 @@
     // Guardar en Supabase (los datos de ejemplo quedan solo en esta sesión)
     const toSave = added.filter((i) => !i.demo && !removed.includes(i));
     const toDelete = removed.filter((i) => i.id).map((i) => i.id);
-    if (!toSave.length && !toDelete.length) return;
+    if (!toSave.length && !toDelete.length) return true;
     setSync("Guardando…");
     try {
       if (toDelete.length) await DB.deleteItems(toDelete);
@@ -283,7 +293,8 @@
       if (re.length) await DB.resetTitles(re);
       setSync("Guardado");
       curateTitles();
-    } catch (err) { setSync("Error al guardar", true); log("✗ " + friendlyErr(err)); }
+      return true;
+    } catch (err) { setSync("Error al guardar", true); log("✗ " + friendlyErr(err)); return false; }
   }
 
   async function persist(list) {
@@ -531,6 +542,14 @@
     "3d": { src: "icons/3d.png", glow: "#5c96c8" },
     animacion: { src: "icons/animacion.png", glow: "#f8a070" },
     audiolibros: { src: "icons/audiolibros.png", glow: "#6498c8" },
+    coding: { src: "icons/coding.png", glow: "#80c0c0" },
+    comfy: { src: "icons/comfy.png", glow: "#58c888" },
+    comfyui: { src: "icons/comfy.png", glow: "#58c888" },
+    criptostrading: { src: "icons/criptostrading.png", glow: "#60c8a8" },
+    fototips: { src: "icons/fototips.png", glow: "#f8b050" },
+    desarrollopersonal: { src: "icons/desarrollopersonal.png", glow: "#f8b058" },
+    dibujo: { src: "icons/dibujo.png", glow: "#f8a070" },
+    dropshipping: { src: "icons/dropshipping.png", glow: "#60c878" },
   };
   const iconKey = (name) => fold(name).replace(/[^a-z0-9]/g, "");
   const customIcon = (name) => { const k = iconKey(name); return own(CUSTOM_ICONS, k) ? CUSTOM_ICONS[k] : null; };
@@ -569,20 +588,24 @@
   }
 
   /* ---------- Diálogo de operaciones ---------- */
-  function dialog({ title, body, ok = "Aceptar", danger = false, onOpen }) {
+  // cancel: texto del botón o false para mostrar solo «Aceptar»; validate(body) devuelve false para no cerrar
+  function dialog({ title, body, ok = "Aceptar", cancel = "Cancelar", danger = false, onOpen, validate }) {
     return new Promise((resolve) => {
-      const m = $("#opModal");
+      const m = $("#opModal"), okB = $("#opOk"), cancelB = $("#opCancel");
       $("#opTitle").textContent = title;
       $("#opBody").innerHTML = body;
-      const okB = $("#opOk");
       okB.textContent = ok;
       okB.classList.toggle("danger-fill", danger);
+      cancelB.hidden = cancel === false;
+      cancelB.textContent = cancel || "Cancelar";
       m.hidden = false;
       onOpen && onOpen($("#opBody"));
-      const done = (v) => { m.hidden = true; okB.onclick = $("#opCancel").onclick = null; m.onkeydown = null; resolve(v); };
-      $("#opCancel").onclick = () => done(null);
-      okB.onclick = () => done($("#opBody"));
-      m.onkeydown = (e) => { if (e.key === "Escape") done(null); if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); done($("#opBody")); } };
+      const done = (v) => { m.hidden = true; okB.onclick = cancelB.onclick = null; m.onkeydown = null; resolve(v); };
+      const accept = () => { if (!validate || validate($("#opBody"))) done($("#opBody")); };
+      cancelB.onclick = () => done(null);
+      okB.onclick = accept;
+      m.onkeydown = (e) => { if (e.key === "Escape" && cancel !== false) done(null); if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); accept(); } };
+      setTimeout(() => (m.querySelector("input:not([hidden]), select") || okB).focus(), 30);
     });
   }
 
@@ -715,8 +738,11 @@
     state.selected = null;
     d.hidden = true; ul.hidden = false;
     ul.innerHTML = all.length ? all.map((g, idx) => tileHtml(g, idx, g.items.length, false)).join("")
-      : `<li class="tiles-empty"><p>Todavía no tenés colecciones.</p><button class="btn primary" type="button" id="emptyImport">Importar la primera</button></li>`;
+      : loaded ? `<li class="tiles-empty"><p>Todavía no tenés colecciones.</p><button class="btn primary" type="button" id="emptyImport">Importar la primera</button></li>`
+      : loadFailed ? `<li class="tiles-empty"><p>No pude cargar tus colecciones. Tus enlaces están a salvo en tu cuenta.</p><button class="btn primary" type="button" id="retryLoad">Reintentar</button></li>`
+      : `<li class="tiles-empty"><p>Cargando tus colecciones…</p></li>`;
     const ei = $("#emptyImport"); if (ei) ei.onclick = () => show("import");
+    const rl = $("#retryLoad"); if (rl) rl.onclick = () => currentUser && onLogin(currentUser);
     bind();
   }
 
@@ -868,6 +894,7 @@
 
   $("#enrichBtn").onclick = async () => {
     const el = $("#enrichLog"); el.textContent = "";
+    if (!loaded) return log("Esperá a que terminen de cargar tus enlaces y probá de nuevo.", el);
     const yt = $("#ytKey").value.trim(), meta = $("#metaToken").value.trim();
     if (!yt && !meta) return log("Cargá al menos una clave.", el);
     if (yt) await enrichYouTube(yt, el);
@@ -1132,8 +1159,8 @@
         return importPackage({ colecta: 2, source: "youtube", sources: [{ net: "youtube", id: "yt:" + c.list, name, count: out.length }], items: out });
       } catch (err) { setSync("Error", true); console.error(err); return toast(`<p class="toast-title">YouTube no devolvió la lista</p><p>Si es privada o «Ver más tarde», usá el marcador. Si no, revisá la clave en Ajustes.</p>`, { kind: "bad", ms: 10000 }); }
     }
-    // Publicación o video suelto
-    const item = { net: c.net, sourceId: "share:" + c.net, collection: "Compartidos", url: c.url, videoId: c.videoId, title: "", author: "", text: "", hashtags: [], savedAt: Date.now() };
+    // Publicación o video suelto: se pregunta la colección, se guarda, se avisa y se vuelve a la red social
+    const item = { net: c.net, url: c.url, videoId: c.videoId, title: "", author: "", text: "", hashtags: [], savedAt: Date.now() };
     const extra = String(sh.text || "").replace(found, "").trim();
     if (extra) { item.text = extra; item.hashtags = P.extractHashtags(extra); }
     if (sh.title && !/^(instagram|facebook|youtube)$/i.test(sh.title.trim())) item.title = sh.title.trim();
@@ -1143,7 +1170,99 @@
         item.title = j.title || item.title; item.author = j.author_name || ""; item.thumb = j.thumbnail_url; item.hashtags = [...new Set([...item.hashtags, ...P.extractHashtags(j.title || "")])];
       } catch { /* sin datos extra */ }
     }
-    await importPackage({ colecta: 2, source: c.net, sources: [{ net: c.net, id: "share:" + c.net, name: "Compartidos", count: 1 }], items: [item] });
+    await saveShared(item);
+  }
+
+  async function saveShared(item) {
+    show("groups");
+    const names = collectionNames();
+    const memo = item.net + ":share:" + item.net; // última colección elegida al compartir desde esa red
+    const def = own(sourceMap, memo) && names.includes(sourceMap[memo]) ? sourceMap[memo] : "__new__";
+    const already = [...new Set(items.filter((i) => i.url === item.url).map((i) => i.collection))];
+    let link = item.url; try { const u = new URL(item.url); link = u.hostname.replace(/^www\./, "") + u.pathname + u.search; } catch { /* queda la dirección */ }
+    const r = await dialog({
+      title: "Guardar en Colecta",
+      body: `<div class="share-prev" style="--glow:${{ instagram: "#e4558f", facebook: "#4d8df5", youtube: "#f2484c" }[item.net]}">
+          ${item.thumb && safeUrl(item.thumb) ? `<img src="${esc(safeUrl(item.thumb))}" alt="" referrerpolicy="no-referrer" />` : ""}
+          <div><span class="share-net">${esc(NETS[item.net])}</span><b>${esc(displayTitle(item))}</b><small>${esc(clip(link, 70))}</small></div>
+        </div>
+        ${already.length ? `<p class="muted small">Ya lo tenés en ${already.map((n) => "«" + esc(n) + "»").join(", ")}.</p>` : ""}
+        <label class="field"><span>¿En qué colección lo guardo?</span>
+          <select class="input" id="shSel">
+            <option value="__new__" ${def === "__new__" ? "selected" : ""}>+ Nueva colección…</option>
+            ${names.map((n) => `<option value="${esc(n)}" ${def === n ? "selected" : ""}>${esc(n)}</option>`).join("")}
+          </select></label>
+        <label class="field" id="shNewWrap" ${def === "__new__" ? "" : "hidden"}><span>Nombre de la nueva colección</span>
+          <input class="input" id="shNew" maxlength="100" placeholder="Por ejemplo: Recetas" /></label>
+        <p class="auth-msg bad" id="shErr"></p>`,
+      ok: "Guardar",
+      onOpen: (b) => {
+        const sel = $("#shSel", b), wrap = $("#shNewWrap", b);
+        sel.onchange = () => { wrap.hidden = sel.value !== "__new__"; if (!wrap.hidden) $("#shNew", b).focus(); };
+      },
+      validate: (b) => {
+        if ($("#shSel", b).value !== "__new__" || $("#shNew", b).value.trim()) return true;
+        $("#shErr", b).textContent = "Escribí el nombre de la colección o elegí una que ya tengas.";
+        $("#shNew", b).focus();
+        return false;
+      },
+    });
+    if (!r) { show("groups"); return; }
+    const chosen = $("#shSel", r).value;
+    const typed = clip($("#shNew", r).value.trim(), LIMITS.coll);
+    // Si escribió el nombre de una colección que ya existe (con otras mayúsculas o tildes), se usa esa
+    const target = chosen !== "__new__" ? chosen : (names.find((n) => P.normalizeName(n) === P.normalizeName(typed)) || typed);
+    sourceMap[memo] = target;
+    DB.saveSettings({ source_map: sourceMap }).catch(() => {});
+
+    let title, msg;
+    if (items.some((i) => i.url === item.url && P.normalizeName(i.collection) === P.normalizeName(target))) {
+      title = "Ya estaba guardado"; msg = `Ese enlace ya estaba en <b>«${esc(target)}»</b>.`;
+    } else {
+      const clean = sanitizeItem(item, item.net, target);
+      if (!clean) return toast(`<p class="toast-title">No pude usar ese enlace</p>`, { kind: "bad" });
+      if (realCount() >= LIMITS.items) return toast(`<p class="toast-title">Llegaste al máximo de ${LIMITS.items} enlaces</p><p>Eliminá colecciones que ya no uses para hacer lugar.</p>`, { kind: "warn", ms: 12000 });
+      let ok = await merge([clean]);
+      while (!ok) {
+        // Lo que no se guardó no queda a la vista
+        items = items.filter((i) => !(i.url === clean.url && i.collection === clean.collection && !i.id));
+        updateStatus();
+        const again = await dialog({ title: "No se pudo guardar", body: `<p>No hay conexión con el servidor o algo falló. Tu enlace todavía no se guardó.</p>`, ok: "Reintentar" });
+        if (!again) { show("groups"); return; }
+        ok = await merge([clean]);
+      }
+      title = "¡Listo!"; msg = `Guardé el enlace en <b>«${esc(target)}»</b>.`;
+    }
+    show("groups");
+    await dialog({ title, body: `<p>${msg}</p>`, ok: "Aceptar", cancel: false });
+    leaveAfterShare(item, target);
+  }
+
+  // «Salir de la app» después de compartir: se intenta cerrar Colecta y, si Android no lo permite,
+  // se vuelve a la publicación en la app de la red social (que es de donde vino la persona)
+  const NET_APPS = { instagram: "com.instagram.android", facebook: "com.facebook.katana", youtube: "com.google.android.youtube" };
+  function leaveAfterShare(item, target) {
+    window.close(); // solo funciona si el historial no tiene otras entradas: por eso no se abre la colección antes
+    // Si no hubo forma de salir (computadora, o no está instalada la app de la red): queda abierta la colección
+    const quedarse = () => {
+      if (document.visibilityState !== "visible") return;
+      state.selected = P.normalizeName(target); state.tagFilter = null;
+      show("groups");
+      toast("Guardado. Para volver, usá el botón Atrás.", { ms: 6000 });
+    };
+    setTimeout(() => {
+      if (document.visibilityState !== "visible") return;
+      const pkg = own(NET_APPS, item.net) ? NET_APPS[item.net] : "";
+      if (/Android/i.test(navigator.userAgent) && pkg) {
+        try {
+          const u = new URL(item.url);
+          location.href = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=${pkg};end`;
+        } catch { /* sin dirección válida */ }
+        setTimeout(quedarse, 1500); // si la app de la red se abrió, Colecta ya no está visible y no hace nada
+        return;
+      }
+      quedarse();
+    }, 400);
   }
 
   // Instalable como app (necesario para aparecer en el menú Compartir)
@@ -1242,6 +1361,7 @@
 
   async function onLogin(user) {
     currentUser = user;
+    loaded = false; loadFailed = false;
     document.body.classList.add("authed");
     $("#userEmail").textContent = user.email;
     setSync("Cargando…");
@@ -1249,22 +1369,29 @@
       const retry = async (fn) => { for (let a = 0; ; a++) { try { return await fn(); } catch (e) { if (a >= 3) throw e; await new Promise((r) => setTimeout(r, 800 * (a + 1))); } } };
       const rows = await retry(() => DB.loadItems());
       const st = await retry(() => DB.loadSettings());
+      if (currentUser !== user) return; // salió o entró otra cuenta mientras cargaba
       items = rows;
       synonymsText = st.synonyms || "";
       sourceMap = st.source_map || {};
       $("#ytKey").value = st.yt_key || ""; $("#metaToken").value = st.meta_token || "";
+      loaded = true;
       setSync("Guardado");
       $("#log").textContent = "";
       log(items.length ? `Tenés ${items.length} enlaces guardados en tu cuenta.` : "Tu cuenta está vacía. Importá tu primera colección desde un enlace.");
-    } catch (err) { setSync("Error al cargar", true); log("✗ " + friendlyErr(err)); }
+    } catch (err) {
+      loadFailed = true;
+      setSync("Error al cargar", true); log("✗ " + friendlyErr(err));
+      toast(`<p class="toast-title">No pude cargar todos tus enlaces</p><p>Están a salvo en tu cuenta. Mientras tanto no se importa ni se modifica nada.</p>`,
+        { kind: "bad", ms: 20000, action: "Reintentar", onAction: () => currentUser === user && onLogin(user) });
+    }
     updateStatus();
     state.selected = null; state.tagFilter = null;
     show("groups");
-    runPending();
-    curateTitles();
+    if (loaded) { runPending(); curateTitles(); }
   }
   function onLogout() {
     currentUser = null; items = []; synonymsText = ""; sourceMap = {}; state.selected = null;
+    loaded = false; loadFailed = false;
     titling.off = false; titling.failed.clear();
     document.body.classList.remove("authed");
     ["#ytKey", "#metaToken", "#authPass"].forEach((s) => ($(s).value = ""));
