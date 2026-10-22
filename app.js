@@ -563,6 +563,16 @@
     pctips: { src: "icons/pctips.png", glow: "#88c8c8" },
     plantastips: { src: "icons/plantastips.png", glow: "#88c8d0" },
     tipsplantas: { src: "icons/plantastips.png", glow: "#88c8d0" },
+    recetas: { src: "icons/recetas.png", glow: "#80c0a0" },
+    marketing: { src: "icons/marketing.png", glow: "#f8b068" },
+    negocios: { src: "icons/negocios.png", glow: "#80c080" },
+    samuelgavilan: { src: "icons/samuelgavilan.png", glow: "#f8b068" },
+    seo: { src: "icons/seo.png", glow: "#78a8c8" },
+    tips: { src: "icons/tips.png", glow: "#c098c8" },
+    tipscasa: { src: "icons/tipscasa.png", glow: "#b05850" },
+    youtube: { src: "icons/youtube.png", glow: "#80c878" },
+    vermastarde: { src: "icons/vermastarde.png", glow: "#f8b060" },
+    turismo: { src: "icons/turismo.png", glow: "#90c8d0" },
   };
   const iconKey = (name) => fold(name).replace(/[^a-z0-9]/g, "");
   const customIcon = (name) => { const k = iconKey(name); return own(CUSTOM_ICONS, k) ? CUSTOM_ICONS[k] : null; };
