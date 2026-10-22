@@ -972,6 +972,8 @@
         const j = await r.json();
         if (j.error) { if (/token|OAuth|permission/i.test(j.error.message)) { console.error(j.error); log("✗ Meta rechazó el token. Revisá que sea válido y tenga permiso de oEmbed.", el); return; } continue; }
         const txt = new DOMParser().parseFromString(j.html || "", "text/html").body.textContent || "";
+        // Si antes no tenía texto, su título de la IA se escribió a ciegas: se vuelve a pedir con el texto nuevo
+        if (!(i.text || "").trim() && txt.trim()) { i.shortTitle = ""; i.retitle = true; }
         i.text = txt.trim(); i.author = clip(j.author_name || i.author, LIMITS.author); i.title = clip(i.title || (j.title || ""), LIMITS.title);
         i.hashtags = P.extractHashtags(i.text); fitText(i); i.enriched = true; ok++;
       } catch { /* sigue */ }
