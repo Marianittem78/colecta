@@ -1,6 +1,8 @@
 // Colecta — lógica pura de la función «titulos» (sin dependencias, se prueba con Node)
 
 export const MODEL = "claude-opus-5-5";
+// Con el secreto GEMINI_API_KEY la función usa Gemini (plan gratis de Google) en lugar de Claude
+export const GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const MAX_POR_PEDIDO = 20;
 export const CUPO_DIARIO = 3000;
 
@@ -90,6 +92,38 @@ export function pulirTitulo(s: unknown): string {
   const i = (t.match(/^[¿«"“'(]*/) ?? [""])[0].length;
   if (/\p{L}/u.test(t[i] ?? "")) t = t.slice(0, i) + t[i].toLocaleUpperCase("es") + t.slice(i + 1);
   return t;
+}
+
+// Cuerpo de generateContent para Gemini: mismas instrucciones y esquema que Claude, sin
+// «additionalProperties» (el esquema de Gemini no lo necesita y leerTitulos ignora lo que sobre)
+export function pedidoGemini(filas: Fila[]) {
+  const sinExtras = (s: unknown): unknown => {
+    if (Array.isArray(s)) return s.map(sinExtras);
+    if (!s || typeof s !== "object") return s;
+    return Object.fromEntries(Object.entries(s).filter(([k]) => k !== "additionalProperties").map(([k, v]) => [k, sinExtras(v)]));
+  };
+  return {
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [{ role: "user", parts: [{ text: armarPedido(filas) }] }],
+    generationConfig: { responseMimeType: "application/json", responseJsonSchema: sinExtras(SCHEMA), maxOutputTokens: 4000 },
+  };
+}
+
+// Texto de la respuesta de Gemini; «rechazo» si Google bloqueó el pedido o la respuesta
+export function leerGemini(r: unknown): { texto: string; rechazo: boolean } {
+  const x = r as { promptFeedback?: { blockReason?: string }; candidates?: { finishReason?: string; content?: { parts?: { text?: unknown; thought?: boolean }[] } }[] };
+  if (x?.promptFeedback?.blockReason) return { texto: "", rechazo: true };
+  const c = x?.candidates?.[0];
+  const texto = (c?.content?.parts ?? []).filter((p) => !p.thought && typeof p.text === "string").map((p) => p.text as string).join("");
+  const bloqueo = /^(SAFETY|RECITATION|BLOCKLIST|PROHIBITED_CONTENT|SPII)$/.test(c?.finishReason ?? "");
+  return { texto, rechazo: !texto && bloqueo };
+}
+
+// Segundos de espera que sugiere un 429 de Gemini (detalle RetryInfo, «20s»)
+export function esperaGemini(cuerpo: unknown): string {
+  const det = (cuerpo as { error?: { details?: { retryDelay?: unknown }[] } })?.error?.details ?? [];
+  const d = det.map((x) => String(x?.retryDelay ?? "")).find((s) => /^\d+(\.\d+)?s$/.test(s));
+  return d ? String(Math.ceil(parseFloat(d))) : "20";
 }
 
 // Lee la respuesta estructurada y la mapea a ids; ignora números fuera del lote o títulos vacíos
