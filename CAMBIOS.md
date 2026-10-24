@@ -1,5 +1,22 @@
 # Cambios de Colecta
 
+## 1.0.4 — 24 de octubre de 2026
+
+### Novedades
+
+- **Compartí desde Threads.** En la app de Threads tocá Compartir → Más → **Colecta**: elegís en qué colección guardar la publicación y Colecta te devuelve a Threads, igual que con Instagram, Facebook y YouTube.
+- **Los 40 íconos de colecciones, todos nuevos.** Se sumaron Unity, NSFW, Vinos, Salud, Webs Útiles, n8n, Training, Tips Cocina, Pelis | Series y Lifestyle, y los 30 anteriores se rehicieron con el mismo tamaño. Ahora pesan seis veces menos, así que la pantalla de colecciones carga más rápido.
+- **Cada colección se ve con su nombre bien escrito**, el mismo que dice su ícono: «Webs Útiles» en lugar de «webs-tiles», «Criptos | Trading» en lugar de «Criptos-Trading», «Ver Más Tarde» en lugar de «VerMasTarde». Vale para los mosaicos, el título de la colección, las listas para elegir colección al importar o compartir, los avisos y lo que exportás. Las colecciones sin ícono que llegan escritas como dirección también se arreglan: «mis-recetas» se ve como «Mis recetas».
+- El ícono aparece aunque la colección tenga las palabras en otro orden («plantas-tips» → Tips Plantas) o le falte la letra con tilde que pierden las exportaciones («pel-culas», «webs-tiles»).
+
+### Correcciones
+
+- Si importás una colección que se llama distinto pero se ve igual que una que ya tenés (por ejemplo «webs-tiles» y «Webs Útiles»), los enlaces van a la misma colección en lugar de abrir otra.
+
+### App de Android
+
+- No hace falta actualizarla: compartir desde Threads funciona con la versión 1.0.3 que ya tenés.
+
 ## 1.0.3 — 11 de octubre de 2026
 
 ### Novedades

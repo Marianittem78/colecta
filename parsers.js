@@ -242,6 +242,7 @@
       try { const h = new URL(i.url).hostname.replace(/^www\./, ""); if (!/(^|\.)(facebook\.com|fb\.watch)$/.test(h)) return "Enlace de " + h; } catch { /* sin enlace */ }
       return "Publicación de Facebook";
     }
+    if (i.net === "threads") return i.author ? "Publicación de " + i.author + " en Threads" : "Publicación de Threads";
     return i.net === "youtube" ? "Video de YouTube" : "Publicación de Instagram";
   }
 

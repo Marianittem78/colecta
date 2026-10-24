@@ -5,7 +5,8 @@
 
   const P = window.Parsers;
   const LS = { items: "colecta.items", keys: "colecta.keys", syn: "colecta.synonyms", theme: "colecta.theme" };
-  const NETS = { facebook: "Facebook", instagram: "Instagram", youtube: "YouTube" };
+  const NETS = { facebook: "Facebook", instagram: "Instagram", threads: "Threads", youtube: "YouTube" };
+  const NET_COLORS = { facebook: "#4d8df5", instagram: "#e4558f", threads: "#b4b4be", youtube: "#f2484c" };
   const own = (o, k) => Object.hasOwn(o, k); // evita que claves como «constructor» o «__proto__» pasen como válidas
 
   // Preferencias del dispositivo (por ahora, el tema): localStorage si se puede, si no en memoria
@@ -170,7 +171,9 @@
     pkg.items.forEach((i) => { const id = i.sourceId || i.collection; if (!m.has(id)) m.set(id, { net: i.net || pkg.source, id, name: i.collection, count: 0 }); m.get(id).count++; });
     return [...m.values()];
   }
-  function collectionNames() { return buildGroups().map((g) => g.name).sort((a, b) => a.localeCompare(b, "es")); }
+  // Nombres tal como están guardados (son el valor de cada opción), ordenados por cómo se muestran
+  function collectionNames() { return buildGroups().map((g) => g.name); }
+  const collOptions = (names, def) => names.map((n) => `<option value="${esc(n)}" ${def === n ? "selected" : ""}>${esc(niceName(n))}</option>`).join("");
 
   function askTargets(pkg) {
     return new Promise((resolve) => {
@@ -182,17 +185,17 @@
         const its = pkg.items.filter((i) => (i.sourceId || i.collection) === s.id);
         const fresh = its.filter((i) => !existingUrls.has(i.url)).length;
         const mapped = sourceMap[s.net + ":" + s.id];
-        const same = names.find((n) => P.normalizeName(n) === P.normalizeName(s.name));
+        const same = names.find((n) => collKey(n) === collKey(s.name));
         const def = mapped && names.includes(mapped) ? mapped : same || "__new__";
         return `<div class="pick" data-idx="${idx}">
-          <div class="pick-head"><b>«${esc(s.name)}»</b><span class="muted">${fresh} ${fresh === 1 ? "enlace nuevo" : "enlaces nuevos"}${its.length - fresh ? ` · ${its.length - fresh} ya estaban` : ""}</span></div>
+          <div class="pick-head"><b>«${esc(niceName(s.name))}»</b><span class="muted">${fresh} ${fresh === 1 ? "enlace nuevo" : "enlaces nuevos"}${its.length - fresh ? ` · ${its.length - fresh} ya estaban` : ""}</span></div>
           <label class="field"><span>Agregar a</span>
             <select class="input pick-sel">
               <option value="__new__" ${def === "__new__" ? "selected" : ""}>+ Nueva colección…</option>
-              ${names.map((n) => `<option value="${esc(n)}" ${def === n ? "selected" : ""}>${esc(n)}</option>`).join("")}
+              ${collOptions(names, def)}
             </select></label>
           <label class="field pick-new" ${def === "__new__" ? "" : "hidden"}><span>Nombre de la nueva colección</span>
-            <input class="input pick-name" maxlength="100" value="${esc(clip(s.name, LIMITS.coll))}" /></label>
+            <input class="input pick-name" maxlength="100" value="${esc(clip(niceName(s.name), LIMITS.coll))}" /></label>
         </div>`;
       }).join("");
       $$(".pick", body).forEach((row) => {
@@ -245,16 +248,16 @@
     if (invalid) log(`✗ ${invalid} ${invalid === 1 ? "elemento descartado" : "elementos descartados"} por tener un enlace no válido.`);
     if (overLimit) log(`✗ ${overLimit} ${overLimit === 1 ? "enlace quedó" : "enlaces quedaron"} afuera: llegaste al máximo de ${LIMITS.items} elementos.`);
     if (toAdd.length) await merge(toAdd);
-    log(`✓ ${total} ${total === 1 ? "enlace agregado" : "enlaces agregados"}${skipped ? ` (${skipped} ya estaban en Colecta)` : ""} → ${[...new Set(choices.map((c) => "«" + c.target + "»"))].join(", ")}`);
+    log(`✓ ${total} ${total === 1 ? "enlace agregado" : "enlaces agregados"}${skipped ? ` (${skipped} ya estaban en Colecta)` : ""} → ${[...new Set(choices.map((c) => "«" + niceName(c.target) + "»"))].join(", ")}`);
     DB.saveSettings({ source_map: sourceMap }).catch(() => {});
     const perTarget = new Map();
     toAdd.forEach((i) => perTarget.set(i.collection, (perTarget.get(i.collection) || 0) + 1));
     choices.forEach((c) => { if (!perTarget.has(c.target)) perTarget.set(c.target, 0); });
-    const lines = [...perTarget].map(([c, n]) => `<li><span class="toast-dot" style="--glow:${colorFor(c)}"></span><span><b>${n}</b> ${n === 1 ? "enlace nuevo" : "enlaces nuevos"} en <b>«${esc(c)}»</b></span></li>`).join("");
+    const lines = [...perTarget].map(([c, n]) => `<li><span class="toast-dot" style="--glow:${colorFor(c)}"></span><span><b>${n}</b> ${n === 1 ? "enlace nuevo" : "enlaces nuevos"} en <b>«${esc(niceName(c))}»</b></span></li>`).join("");
     const first = choices[0].target;
     toast(`<p class="toast-title">${total ? "Importación completa" : "No había enlaces nuevos"}</p><ul class="toast-list">${lines}</ul>${skipped ? `<p class="toast-note">${skipped === 1 ? "1 ya estaba en Colecta y no se repitió." : skipped + " ya estaban en Colecta y no se repitieron."}</p>` : ""}${overLimit ? `<p class="toast-note warn-note">Llegaste al máximo de ${LIMITS.items} elementos por cuenta: ${overLimit} ${overLimit === 1 ? "enlace quedó" : "enlaces quedaron"} afuera. Eliminá colecciones que ya no uses para hacer lugar.</p>` : ""}${invalid ? `<p class="toast-note">${invalid} ${invalid === 1 ? "elemento tenía" : "elementos tenían"} un enlace no válido y se descartaron.</p>` : ""}`,
-      { action: "Ver colección", onAction: () => { state.query = ""; $("#search").value = ""; state.selected = P.normalizeName(first); show("groups"); }, ms: 9000, kind: overLimit ? "warn" : total ? "ok" : "warn" });
-    state.selected = P.normalizeName(choices[0].target);
+      { action: "Ver colección", onAction: () => { state.query = ""; $("#search").value = ""; state.selected = collKey(first); show("groups"); }, ms: 9000, kind: overLimit ? "warn" : total ? "ok" : "warn" });
+    state.selected = collKey(choices[0].target);
   }
 
   async function merge(newItems) {
@@ -309,9 +312,10 @@
 
   function updateStatus() {
     for (const n of Object.keys(NETS)) {
-      const list = items.filter((i) => i.net === n);
-      const colls = new Set(list.map((i) => i.collection));
       const el = $("#st-" + n);
+      if (!el) continue; // Threads no tiene tecla: se trae de a una publicación con Compartir
+      const list = items.filter((i) => i.net === n);
+      const colls = new Set(list.map((i) => collKey(i.collection)));
       el.textContent = list.length ? `${list.length.toLocaleString("es-AR")} enlaces · ${colls.size} ${colls.size === 1 ? "colección" : "colecciones"}` : "Sin datos";
       el.classList.toggle("ok", !!list.length);
     }
@@ -356,27 +360,29 @@
   function buildGroups() {
     const groups = new Map();
     for (const it of items) {
-      const key = P.normalizeName(it.collection) || "sin coleccion";
+      const key = collKey(it.collection);
       // Diccionarios sin prototipo: una colección llamada «__proto__» o «constructor» no rompe nada
-      if (!groups.has(key)) groups.set(key, { key, names: Object.create(null), items: [], nets: { facebook: 0, instagram: 0, youtube: 0 } });
+      if (!groups.has(key)) groups.set(key, { key, names: Object.create(null), items: [], nets: Object.fromEntries(Object.keys(NETS).map((n) => [n, 0])) });
       const g = groups.get(key);
       g.names[it.collection] = (g.names[it.collection] || 0) + 1;
       g.items.push(it); g.nets[it.net]++;
     }
     return [...groups.values()].map((g) => {
-      g.name = Object.entries(g.names).sort((a, b) => b[1] - a[1])[0][0];
+      g.name = Object.entries(g.names).sort((a, b) => b[1] - a[1])[0][0]; // como está guardado
+      g.label = niceName(g.name); // como se muestra
       g.netCount = Object.values(g.nets).filter(Boolean).length;
       const tf = Object.create(null);
       g.items.forEach((i) => tagsOf(i).forEach((t) => (tf[t] = (tf[t] || 0) + 1)));
       g.tags = Object.entries(tf).sort((a, b) => b[1] - a[1]);
       return g;
-    }).sort((a, b) => a.name.localeCompare(b.name, "es"));
+    }).sort((a, b) => a.label.localeCompare(b.label, "es"));
   }
 
   // ---- Buscador: título, autor, texto de la publicación / descripción del video y hashtags
   const fold = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const slug = (n) => fold(n).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "coleccion";
   const terms = (q) => fold(q).split(/\s+/).filter(Boolean);
-  const haystack = (i) => fold([i.shortTitle, i.title, i.author, i.text, tagsOf(i).join(" "), i.collection].join(" \n "));
+  const haystack = (i) => fold([i.shortTitle, i.title, i.author, i.text, tagsOf(i).join(" "), i.collection, niceName(i.collection)].join(" \n "));
   const matches = (i, ts) => { const h = haystack(i); return ts.every((t) => h.includes(t)); };
   function snippet(text, ts) {
     const raw = String(text || "").replace(/\s+/g, " ").trim();
@@ -537,45 +543,83 @@
     [/humor|meme|chiste|risa|gracios/, "smile"],
     [/idea|tip|inspir|creativ|truco|hack/, "bulb"],
   ];
-  // Íconos propios (PNG con el nombre incluido). Clave: nombre sin tildes, espacios ni signos.
-  const CUSTOM_ICONS = {
-    "3d": { src: "icons/3d.png", glow: "#5c96c8" },
-    animacion: { src: "icons/animacion.png", glow: "#f8a070" },
-    audiolibros: { src: "icons/audiolibros.png", glow: "#6498c8" },
-    coding: { src: "icons/coding.png", glow: "#80c0c0" },
-    comfy: { src: "icons/comfy.png", glow: "#58c888" },
-    comfyui: { src: "icons/comfy.png", glow: "#58c888" },
-    criptostrading: { src: "icons/criptostrading.png", glow: "#60c8a8" },
-    fototips: { src: "icons/fototips.png", glow: "#f8b050" },
-    desarrollopersonal: { src: "icons/desarrollopersonal.png", glow: "#f8b058" },
-    dibujo: { src: "icons/dibujo.png", glow: "#f8a070" },
-    dropshipping: { src: "icons/dropshipping.png", glow: "#60c878" },
-    fba: { src: "icons/fba.png", glow: "#78b0d0" },
-    amazonfba: { src: "icons/fba.png", glow: "#78b0d0" },
-    libros: { src: "icons/libros.png", glow: "#88c8d0" },
-    footage: { src: "icons/footage.png", glow: "#5090c8" },
-    footageplantillas: { src: "icons/footage.png", glow: "#5090c8" },
-    meditaciones: { src: "icons/meditaciones.png", glow: "#508cc8" },
-    ia: { src: "icons/ia.png", glow: "#5090c8" },
-    inversiones: { src: "icons/inversiones.png", glow: "#88c8d0" },
-    learn: { src: "icons/learn.png", glow: "#78a8d0" },
-    notebooklm: { src: "icons/notebooklm.png", glow: "#78a8d0" },
-    pctips: { src: "icons/pctips.png", glow: "#88c8c8" },
-    plantastips: { src: "icons/plantastips.png", glow: "#88c8d0" },
-    tipsplantas: { src: "icons/plantastips.png", glow: "#88c8d0" },
-    recetas: { src: "icons/recetas.png", glow: "#80c0a0" },
-    marketing: { src: "icons/marketing.png", glow: "#f8b068" },
-    negocios: { src: "icons/negocios.png", glow: "#80c080" },
-    samuelgavilan: { src: "icons/samuelgavilan.png", glow: "#f8b068" },
-    seo: { src: "icons/seo.png", glow: "#78a8c8" },
-    tips: { src: "icons/tips.png", glow: "#c098c8" },
-    tipscasa: { src: "icons/tipscasa.png", glow: "#b05850" },
-    youtube: { src: "icons/youtube.png", glow: "#80c878" },
-    vermastarde: { src: "icons/vermastarde.png", glow: "#f8b060" },
-    turismo: { src: "icons/turismo.png", glow: "#90c8d0" },
-  };
+  // Íconos propios: PNG con el nombre dibujado, en icons/<nombre sin tildes ni signos>.png (los arma
+  // preparar-iconos.py a partir de Iconos\). «name» es cómo se escribe la colección y se muestra en toda
+  // la app; «alias», otras formas en que llega el nombre desde las redes.
+  const CUSTOM_ICONS = [
+    { name: "3D", glow: "#5890c8" },
+    { name: "Animación", glow: "#f8a070" },
+    { name: "Audiolibros", glow: "#6098c8" },
+    { name: "Coding", glow: "#80c0c0" },
+    { name: "Comfy UI", glow: "#58c888", alias: ["comfy"] },
+    { name: "Criptos | Trading", glow: "#60c8a8" },
+    { name: "Foto Tips", glow: "#f8b050" },
+    { name: "Desarrollo Personal", glow: "#f8b058" },
+    { name: "Dibujo", glow: "#f8a070" },
+    { name: "Dropshipping", glow: "#60c878" },
+    { name: "Amazon FBA", glow: "#78a8d0", alias: ["fba"] },
+    { name: "Libros", glow: "#90c8d0" },
+    { name: "Footage | Plantillas", glow: "#4888c0", alias: ["footage"] },
+    { name: "Meditaciones", glow: "#4888c0", alias: ["meditación"] },
+    { name: "IA", glow: "#4888c0", alias: ["inteligencia artificial", "ai"] },
+    { name: "Inversiones", glow: "#90c8d0" },
+    { name: "Learn", glow: "#78a8c8" },
+    { name: "NotebookLM", glow: "#70a0c8" },
+    { name: "PC Tips", glow: "#90c8c8" },
+    { name: "Tips Plantas", glow: "#90c8c8" },
+    { name: "Recetas", glow: "#80c0a0" },
+    { name: "Marketing", glow: "#f8b068" },
+    { name: "Negocios", glow: "#80c080" },
+    { name: "Samuel Gavilan", glow: "#f8b068" },
+    { name: "SEO", glow: "#78a8c8" },
+    { name: "Tips", glow: "#c098c8" },
+    { name: "Tips Casa", glow: "#b05850" },
+    { name: "YouTube", glow: "#80c878" },
+    { name: "Ver Más Tarde", glow: "#f8a858", alias: ["watch later"] },
+    { name: "Turismo", glow: "#90c8d0" },
+    { name: "Unity", glow: "#c098c8" },
+    { name: "NSFW", glow: "#f8b060" },
+    { name: "Vinos", glow: "#c098c8" },
+    { name: "Salud", glow: "#b05858" },
+    { name: "Webs Útiles", glow: "#80c0c8" },
+    { name: "n8n", glow: "#80c880" },
+    { name: "Training", glow: "#6080c0" },
+    { name: "Tips Cocina", glow: "#88b8c0" },
+    { name: "Pelis | Series", glow: "#4898a8", alias: ["películas", "pelis", "películas y series"] },
+    { name: "Lifestyle", glow: "#f8b070" },
+  ];
   const iconKey = (name) => fold(name).replace(/[^a-z0-9]/g, "");
-  const customIcon = (name) => { const k = iconKey(name); return own(CUSTOM_ICONS, k) ? CUSTOM_ICONS[k] : null; };
+  const wordsKey = (name) => fold(name).split(/[^a-z0-9]+/).filter(Boolean).sort().join(" "); // «plantas-tips» = «Tips Plantas»
+  const ICON_BY_KEY = new Map(), ICON_BY_WORDS = new Map();
+  CUSTOM_ICONS.forEach((ic) => {
+    ic.src = `icons/${slug(ic.name)}.png`;
+    [ic.name, ...(ic.alias || [])].forEach((n) => { ICON_BY_KEY.set(iconKey(n), ic); ICON_BY_WORDS.set(wordsKey(n), ic); });
+  });
+  // Una letra de menos también vale: al pasar por la dirección de la colección se pierden las letras con tilde («pel-culas», «webs-tiles»)
+  const oneLess = (k, full) => full.length === k.length + 1 && [...full].some((_, j) => full.slice(0, j) + full.slice(j + 1) === k);
+  const iconCache = new Map();
+  function customIcon(name) {
+    const raw = String(name ?? "");
+    if (!iconCache.has(raw)) {
+      const k = iconKey(raw);
+      let ic = ICON_BY_KEY.get(k) || ICON_BY_WORDS.get(wordsKey(raw)) || null;
+      if (!ic && k.length >= 5) ic = ([...ICON_BY_KEY].find(([full]) => oneLess(k, full)) || [])[1] || null;
+      iconCache.set(raw, ic);
+    }
+    return iconCache.get(raw);
+  }
+  // Nombre para mostrar: el del ícono, si la colección tiene uno; si no, el guardado, salvo que venga
+  // escrito como dirección («mis-recetas-faciles» → «Mis recetas faciles»)
+  function niceName(name) {
+    const raw = String(name ?? "").trim();
+    const ic = customIcon(raw);
+    if (ic) return ic.name;
+    if (/\s/.test(raw) || (!/[-_]/.test(raw) && raw !== raw.toLowerCase())) return raw;
+    const t = raw.split(/[-_]+/).filter(Boolean).join(" ");
+    return t ? t[0].toLocaleUpperCase("es") + t.slice(1) : raw;
+  }
+  // Colecciones que se muestran igual son la misma («webs-tiles» y «Webs Útiles»)
+  const collKey = (name) => P.normalizeName(niceName(name)) || "sin coleccion";
   const TILE_COLORS = ["#60a5fa", "#fb923c", "#4ade80", "#2dd4bf", "#a78bfa", "#f472b6", "#facc15", "#38bdf8", "#f87171", "#c084fc", "#a3e635", "#fdba74"];
   function iconFor(name) {
     const n = fold(name);
@@ -585,7 +629,7 @@
   function colorFor(name) {
     const ci = customIcon(name);
     if (ci) return ci.glow;
-    const idx = buildGroups().findIndex((g) => g.key === P.normalizeName(name));
+    const idx = buildGroups().findIndex((g) => g.key === collKey(name));
     if (idx >= 0) return TILE_COLORS[idx % TILE_COLORS.length];
     let h = 0; for (const ch of fold(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     return TILE_COLORS[h % TILE_COLORS.length];
@@ -641,10 +685,9 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-  const slug = (n) => fold(n).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "coleccion";
   const csvCell = (v) => { let s = String(v ?? ""); if (/^[=+\-@\t\r|%]/.test(s)) s = "'" + s; return /[",\n\r;']/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   function exportItems(list, name, fmt) {
-    const rows = list.map((i) => ({ coleccion: i.collection, red: i.net, url: i.url, titulo: displayTitle(i), titulo_original: i.title || "", autor: i.author || "", hashtags: tagsOf(i).join(" "), texto: i.text || "", guardado: i.savedAt || "" }));
+    const rows = list.map((i) => ({ coleccion: niceName(i.collection), red: i.net, url: i.url, titulo: displayTitle(i), titulo_original: i.title || "", autor: i.author || "", hashtags: tagsOf(i).join(" "), texto: i.text || "", guardado: i.savedAt || "" }));
     if (fmt === "json") download(`colecta-${slug(name)}.json`, JSON.stringify(rows, null, 2), "application/json");
     else if (fmt === "html") {
       const by = new Map(); rows.forEach((r) => { if (!by.has(r.coleccion)) by.set(r.coleccion, []); by.get(r.coleccion).push(r); });
@@ -677,7 +720,7 @@
   async function askRename(g) {
     const r = await dialog({
       title: "Renombrar colección",
-      body: `<label class="field"><span>Nuevo nombre</span><input class="input" id="opName" maxlength="100" value="${esc(g.name)}" /></label><p class="muted small">Si usás el nombre de otra colección, se unen en una sola.</p>`,
+      body: `<label class="field"><span>Nuevo nombre</span><input class="input" id="opName" maxlength="100" value="${esc(g.label)}" /></label><p class="muted small">Si usás el nombre de otra colección, se unen en una sola.</p>`,
       ok: "Guardar",
       onOpen: (b) => setTimeout(() => $("#opName", b).select(), 30),
     });
@@ -686,8 +729,8 @@
   }
   async function askDelete(g) {
     const r = await dialog({
-      title: `Eliminar «${g.name}»`,
-      body: `<p>Se van a borrar los <b>${g.items.length}</b> enlaces de esta colección de tu cuenta de Colecta. Tus guardados en Instagram, Facebook y YouTube no se tocan.</p>`,
+      title: `Eliminar «${g.label}»`,
+      body: `<p>Se van a borrar los <b>${g.items.length}</b> enlaces de esta colección de tu cuenta de Colecta. Tus guardados en las redes sociales no se tocan.</p>`,
       ok: "Eliminar", danger: true,
     });
     if (r) await deleteCollection(g);
@@ -706,7 +749,7 @@
       closeMenu();
       if (op === "open") { state.selected = g.key; state.tagFilter = null; renderGroups(); }
       if (op === "rename") askRename(g);
-      if (op === "export") askExport(g.items, g.name);
+      if (op === "export") askExport(g.items, g.label);
       if (op === "delete") askDelete(g);
     };
     setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
@@ -717,16 +760,16 @@
     const ci = customIcon(g.name);
     const face = ci
       ? `<img class="tile-img" src="${esc(ci.src)}" alt="" draggable="false" />`
-      : `${svgIcon(g.name)}<span class="tile-name">${esc(g.name)}</span>`;
+      : `${svgIcon(g.name)}<span class="tile-name">${esc(g.label)}</span>`;
     return `<li class="tile-wrap">
-      <button class="tile key ${ci ? "has-img" : ""} ${active ? "active" : ""}" data-key="${esc(g.key)}" style="--glow:${colorFor(g.name)}" aria-label="${esc(g.name)}, ${count} enlaces">
+      <button class="tile key ${ci ? "has-img" : ""} ${active ? "active" : ""}" data-key="${esc(g.key)}" style="--glow:${colorFor(g.name)}" aria-label="${esc(g.label)}, ${count} enlaces">
         <span class="key-cap">
           <span class="tile-num">${idx + 1}</span>
           ${face}
           <span class="tile-count">${count} ${count === 1 ? "enlace" : "enlaces"}</span>
         </span>
       </button>
-      <button class="tile-more" data-key="${esc(g.key)}" type="button" aria-label="Opciones de ${esc(g.name)}" title="Renombrar, exportar o eliminar">
+      <button class="tile-more" data-key="${esc(g.key)}" type="button" aria-label="Opciones de ${esc(g.label)}" title="Renombrar, exportar o eliminar">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
       </button>
     </li>`;
@@ -746,13 +789,13 @@
     if (ts.length) {
       const hits = items.filter((i) => matches(i, ts));
       const per = new Map();
-      hits.forEach((i) => { const k = P.normalizeName(i.collection); per.set(k, (per.get(k) || 0) + 1); });
+      hits.forEach((i) => { const k = collKey(i.collection); per.set(k, (per.get(k) || 0) + 1); });
       if (state.selected && !per.has(state.selected)) state.selected = null;
       ul.hidden = false; ul.classList.add("compact");
       ul.innerHTML = all.map((g, idx) => per.has(g.key) ? tileHtml(g, idx, per.get(g.key), state.selected === g.key) : "").join("");
       bind();
       d.hidden = false;
-      renderResults(hits.filter((i) => !state.selected || P.normalizeName(i.collection) === state.selected), ts, all);
+      renderResults(hits.filter((i) => !state.selected || collKey(i.collection) === state.selected), ts, all);
       return;
     }
     ul.classList.remove("compact");
@@ -772,8 +815,8 @@
   function renderResults(list, ts, all) {
     const d = $("#detail");
     list = sortItems(list);
-    const scope = state.selected ? (all.find((g) => g.key === state.selected) || {}).name : null;
-    const nameOf = (i) => (all.find((g) => g.key === P.normalizeName(i.collection)) || {}).name || i.collection;
+    const scope = state.selected ? (all.find((g) => g.key === state.selected) || {}).label : null;
+    const nameOf = (i) => (all.find((g) => g.key === collKey(i.collection)) || {}).label || niceName(i.collection);
     d.innerHTML = `
       <header class="dhead"><div>
         <h1>${list.length} ${list.length === 1 ? "resultado" : "resultados"}</h1>
@@ -810,7 +853,7 @@
         <div class="banner-id">
           ${customIcon(g.name) ? `<img class="banner-img" src="${esc(customIcon(g.name).src)}" alt="" />` : svgIcon(g.name, "banner-icon")}
           <div>
-            <h1>${esc(g.name)}</h1>
+            <h1>${esc(g.label)}</h1>
             <p>${g.items.length} ${g.items.length === 1 ? "enlace" : "enlaces"}</p>
           </div>
         </div>
@@ -841,7 +884,7 @@
           </li>`; }).join("") || `<li class="muted pad">No hay enlaces con este filtro.</li>`}
       </ul>`;
     $("#renameBtn").onclick = () => askRename(g);
-    $("#exportBtn").onclick = () => askExport(g.items, g.name);
+    $("#exportBtn").onclick = () => askExport(g.items, g.label);
     $("#deleteBtn").onclick = () => askDelete(g);
     $$(".tagcloud .tag", d).forEach((b) => (b.onclick = () => { state.tagFilter = state.tagFilter === b.dataset.tag ? null : b.dataset.tag; renderDetail(g, idx); }));
     bindSort();
@@ -865,8 +908,8 @@
   if (history.state && history.state.colectaDetail) history.replaceState(null, "");
 
   async function renameCollection(g, name) {
-    if (!name || name === g.name) return;
-    const target = buildGroups().find((x) => P.normalizeName(x.name) === P.normalizeName(name) && x.key !== g.key);
+    if (!name || name === g.label) return;
+    const target = buildGroups().find((x) => x.key === collKey(name) && x.key !== g.key);
     const finalName = target ? target.name : name;
     const already = new Set(target ? target.items.map((i) => i.url) : []);
     const dups = g.items.filter((i) => already.has(i.url));
@@ -877,13 +920,13 @@
       await DB.renameItems(moving.filter((i) => i.id).map((i) => i.id), finalName);
       items = items.filter((i) => !dups.includes(i));
       moving.forEach((i) => (i.collection = finalName));
-      Object.keys(sourceMap).forEach((k) => { if (P.normalizeName(sourceMap[k]) === g.key) sourceMap[k] = finalName; });
+      Object.keys(sourceMap).forEach((k) => { if (collKey(sourceMap[k]) === g.key) sourceMap[k] = finalName; });
       DB.saveSettings({ source_map: sourceMap }).catch(() => {});
       setSync("Guardado");
-      if (state.selected) state.selected = P.normalizeName(finalName);
+      if (state.selected) state.selected = collKey(finalName);
       updateStatus(); renderGroups();
-      toast(target ? `<b>«${esc(g.name)}»</b> se unió con <b>«${esc(finalName)}»</b>: ${moving.length} ${moving.length === 1 ? "enlace movido" : "enlaces movidos"}${dups.length ? `, ${dups.length} repetidos quitados` : ""}.`
-        : `Renombraste <b>«${esc(g.name)}»</b> a <b>«${esc(finalName)}»</b>.`);
+      toast(target ? `<b>«${esc(g.label)}»</b> se unió con <b>«${esc(target.label)}»</b>: ${moving.length} ${moving.length === 1 ? "enlace movido" : "enlaces movidos"}${dups.length ? `, ${dups.length} repetidos quitados` : ""}.`
+        : `Renombraste <b>«${esc(g.label)}»</b> a <b>«${esc(niceName(finalName))}»</b>.`);
     } catch (err) { setSync("Error al guardar", true); toast("No pude renombrar: " + esc(friendlyErr(err)), { kind: "bad" }); }
   }
   async function deleteCollection(g) {
@@ -891,11 +934,11 @@
     try {
       await DB.deleteItems(g.items.filter((i) => i.id).map((i) => i.id));
       items = items.filter((i) => !g.items.includes(i));
-      Object.keys(sourceMap).forEach((k) => { if (P.normalizeName(sourceMap[k]) === g.key) delete sourceMap[k]; });
+      Object.keys(sourceMap).forEach((k) => { if (collKey(sourceMap[k]) === g.key) delete sourceMap[k]; });
       DB.saveSettings({ source_map: sourceMap }).catch(() => {});
       setSync("Guardado");
       state.selected = null; updateStatus(); renderGroups();
-      toast(`Eliminaste <b>«${esc(g.name)}»</b> y sus ${g.items.length} ${g.items.length === 1 ? "enlace" : "enlaces"}.`);
+      toast(`Eliminaste <b>«${esc(g.label)}»</b> y sus ${g.items.length} ${g.items.length === 1 ? "enlace" : "enlaces"}.`);
     } catch (err) { setSync("Error al borrar", true); toast("No pude eliminar: " + esc(friendlyErr(err)), { kind: "bad" }); }
   }
   function alertMsg(m) { log("✗ " + m); }
@@ -983,10 +1026,10 @@
   }
 
   /* ---------- Exportar (Ajustes) ---------- */
-  $("#exportJson").onclick = () => download("colecta.json", JSON.stringify(buildGroups().map((g) => ({ coleccion: g.name, redes: g.nets, hashtags: g.tags.slice(0, 20).map(([t]) => t), enlaces: g.items.map((i) => ({ red: i.net, url: i.url, titulo: displayTitle(i), titulo_original: i.title, autor: i.author, hashtags: tagsOf(i) })) })), null, 2), "application/json");
+  $("#exportJson").onclick = () => download("colecta.json", JSON.stringify(buildGroups().map((g) => ({ coleccion: g.label, redes: g.nets, hashtags: g.tags.slice(0, 20).map(([t]) => t), enlaces: g.items.map((i) => ({ red: i.net, url: i.url, titulo: displayTitle(i), titulo_original: i.title, autor: i.author, hashtags: tagsOf(i) })) })), null, 2), "application/json");
   $("#exportCsv").onclick = () => {
     const rows = [["coleccion", "red", "url", "titulo", "titulo_original", "autor", "hashtags"]];
-    buildGroups().forEach((g) => g.items.forEach((i) => rows.push([g.name, i.net, i.url, displayTitle(i), i.title, i.author, tagsOf(i).join(" ")])));
+    buildGroups().forEach((g) => g.items.forEach((i) => rows.push([g.label, i.net, i.url, displayTitle(i), i.title, i.author, tagsOf(i).join(" ")])));
     download("colecta.csv", "\ufeff" + rows.map((r) => r.map(csvCell).join(",")).join("\n"), "text/csv");
   };
 
@@ -1138,6 +1181,13 @@
       if (/^\/saved(\/|$)/.test(p)) return { net: "facebook", kind: "collection" };
       return { net: "facebook", kind: "post", url: x.href };
     }
+    if (h === "threads.com" || h === "threads.net") {
+      // Siempre con threads.com y sin lo que agrega la app al compartir (?xmt=…), así no se repite
+      const post = p.match(/^\/@([\w.]+)\/post\/([\w-]+)/);
+      if (post) return { net: "threads", kind: "post", author: "@" + post[1], url: `https://www.threads.com/@${post[1]}/post/${post[2]}` };
+      const short = p.match(/^\/t\/([\w-]+)/);
+      if (short) return { net: "threads", kind: "post", url: "https://www.threads.com/t/" + short[1] };
+    }
     if (h === "youtube.com" || h === "youtu.be" || h === "music.youtube.com") {
       const list = x.searchParams.get("list");
       const v = h === "youtu.be" ? p.slice(1, 12) : (x.searchParams.get("v") || (p.match(/^\/(shorts|live)\/([A-Za-z0-9_-]{11})/) || [])[2]);
@@ -1168,7 +1218,7 @@
     const found = (sh.url && safeUrl(sh.url)) || ((sh.text || "").match(/https?:\/\/[^\s<>"']+/) || [])[0] || "";
     const c = classifyShared(found);
     show("import");
-    if (!c) return toast(`<p class="toast-title">No pude usar ese enlace</p><p>Colecta acepta publicaciones, reels y videos de Instagram, Facebook y YouTube, y listas de YouTube.</p>`, { kind: "warn", ms: 9000 });
+    if (!c) return toast(`<p class="toast-title">No pude usar ese enlace</p><p>Colecta acepta publicaciones, reels y videos de Instagram, Facebook, Threads y YouTube, y listas de YouTube.</p>`, { kind: "warn", ms: 9000 });
     if (c.kind === "collection") {
       $$(".net-key").find((b) => b.dataset.net === c.net)?.click();
       return toast(`<p class="toast-title">Para traer una colección entera</p><p>Abrila en el navegador y tocá el marcador «Enviar a Colecta» (los pasos están en Importar). Compartir solo trae publicaciones sueltas.</p>`, { kind: "warn", ms: 12000 });
@@ -1185,10 +1235,10 @@
       } catch (err) { setSync("Error", true); console.error(err); return toast(`<p class="toast-title">YouTube no devolvió la lista</p><p>Si es privada o «Ver más tarde», usá el marcador. Si no, revisá la clave en Ajustes.</p>`, { kind: "bad", ms: 10000 }); }
     }
     // Publicación o video suelto: se pregunta la colección, se guarda, se avisa y se vuelve a la red social
-    const item = { net: c.net, url: c.url, videoId: c.videoId, title: "", author: "", text: "", hashtags: [], savedAt: Date.now() };
+    const item = { net: c.net, url: c.url, videoId: c.videoId, title: "", author: c.author || "", text: "", hashtags: [], savedAt: Date.now() };
     const extra = String(sh.text || "").replace(found, "").trim();
     if (extra) { item.text = extra; item.hashtags = P.extractHashtags(extra); }
-    if (sh.title && !/^(instagram|facebook|youtube)$/i.test(sh.title.trim())) item.title = sh.title.trim();
+    if (sh.title && !/^(instagram|facebook|threads|youtube)$/i.test(sh.title.trim())) item.title = sh.title.trim();
     if (c.net === "youtube") {
       try {
         const j = await (await fetch("https://www.youtube.com/oembed?format=json&url=" + encodeURIComponent(c.url))).json();
@@ -1203,19 +1253,19 @@
     const names = collectionNames();
     const memo = item.net + ":share:" + item.net; // última colección elegida al compartir desde esa red
     const def = own(sourceMap, memo) && names.includes(sourceMap[memo]) ? sourceMap[memo] : "__new__";
-    const already = [...new Set(items.filter((i) => i.url === item.url).map((i) => i.collection))];
+    const already = [...new Set(items.filter((i) => i.url === item.url).map((i) => niceName(i.collection)))];
     let link = item.url; try { const u = new URL(item.url); link = u.hostname.replace(/^www\./, "") + u.pathname + u.search; } catch { /* queda la dirección */ }
     const r = await dialog({
       title: "Guardar en Colecta",
-      body: `<div class="share-prev" style="--glow:${{ instagram: "#e4558f", facebook: "#4d8df5", youtube: "#f2484c" }[item.net]}">
+      body: `<div class="share-prev" style="--glow:${NET_COLORS[item.net]}">
           ${item.thumb && safeUrl(item.thumb) ? `<img src="${esc(safeUrl(item.thumb))}" alt="" referrerpolicy="no-referrer" />` : ""}
           <div><span class="share-net">${esc(NETS[item.net])}</span><b>${esc(displayTitle(item))}</b><small>${esc(clip(link, 70))}</small></div>
         </div>
-        ${already.length ? `<p class="muted small">Ya lo tenés en ${already.map((n) => "«" + esc(n) + "»").join(", ")}.</p>` : ""}
+        ${already.length ? `<p class="muted small">Ya lo tenés en ${already.map((n) => "«" + esc(niceName(n)) + "»").join(", ")}.</p>` : ""}
         <label class="field"><span>¿En qué colección lo guardo?</span>
           <select class="input" id="shSel">
             <option value="__new__" ${def === "__new__" ? "selected" : ""}>+ Nueva colección…</option>
-            ${names.map((n) => `<option value="${esc(n)}" ${def === n ? "selected" : ""}>${esc(n)}</option>`).join("")}
+            ${collOptions(names, def)}
           </select></label>
         <label class="field" id="shNewWrap" ${def === "__new__" ? "" : "hidden"}><span>Nombre de la nueva colección</span>
           <input class="input" id="shNew" maxlength="100" placeholder="Por ejemplo: Recetas" /></label>
@@ -1236,13 +1286,13 @@
     const chosen = $("#shSel", r).value;
     const typed = clip($("#shNew", r).value.trim(), LIMITS.coll);
     // Si escribió el nombre de una colección que ya existe (con otras mayúsculas o tildes), se usa esa
-    const target = chosen !== "__new__" ? chosen : (names.find((n) => P.normalizeName(n) === P.normalizeName(typed)) || typed);
+    const target = chosen !== "__new__" ? chosen : (names.find((n) => collKey(n) === collKey(typed)) || typed);
     sourceMap[memo] = target;
     DB.saveSettings({ source_map: sourceMap }).catch(() => {});
 
     let title, msg;
-    if (items.some((i) => i.url === item.url && P.normalizeName(i.collection) === P.normalizeName(target))) {
-      title = "Ya estaba guardado"; msg = `Ese enlace ya estaba en <b>«${esc(target)}»</b>.`;
+    if (items.some((i) => i.url === item.url && collKey(i.collection) === collKey(target))) {
+      title = "Ya estaba guardado"; msg = `Ese enlace ya estaba en <b>«${esc(niceName(target))}»</b>.`;
     } else {
       const clean = sanitizeItem(item, item.net, target);
       if (!clean) return toast(`<p class="toast-title">No pude usar ese enlace</p>`, { kind: "bad" });
@@ -1256,7 +1306,7 @@
         if (!again) { show("groups"); return; }
         ok = await merge([clean]);
       }
-      title = "¡Listo!"; msg = `Guardé el enlace en <b>«${esc(target)}»</b>.`;
+      title = "¡Listo!"; msg = `Guardé el enlace en <b>«${esc(niceName(target))}»</b>.`;
     }
     show("groups");
     await dialog({ title, body: `<p>${msg}</p>`, ok: "Aceptar", cancel: false });
@@ -1265,13 +1315,13 @@
 
   // «Salir de la app» después de compartir: se intenta cerrar Colecta y, si Android no lo permite,
   // se vuelve a la publicación en la app de la red social (que es de donde vino la persona)
-  const NET_APPS = { instagram: "com.instagram.android", facebook: "com.facebook.katana", youtube: "com.google.android.youtube" };
+  const NET_APPS = { instagram: "com.instagram.android", facebook: "com.facebook.katana", threads: "com.instagram.barcelona", youtube: "com.google.android.youtube" };
   function leaveAfterShare(item, target) {
     window.close(); // solo funciona si el historial no tiene otras entradas: por eso no se abre la colección antes
     // Si no hubo forma de salir (computadora, o no está instalada la app de la red): queda abierta la colección
     const quedarse = () => {
       if (document.visibilityState !== "visible") return;
-      state.selected = P.normalizeName(target); state.tagFilter = null;
+      state.selected = collKey(target); state.tagFilter = null;
       show("groups");
       toast("Guardado. Para volver, usá el botón Atrás.", { ms: 6000 });
     };
