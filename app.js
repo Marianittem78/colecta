@@ -1129,7 +1129,13 @@
     show("import");
     importPackage(pkg);
   }
-  async function runPending() { if (pendingPkg) { const p = pendingPkg; pendingPkg = null; show("import"); await importPackage(p); } if (pendingShare) { const s = pendingShare; pendingShare = null; await handleShare(s); } }
+  async function runPending() {
+    if (pendingPkg) { const p = pendingPkg; pendingPkg = null; show("import"); await importPackage(p); }
+    if (pendingShare) {
+      const s = pendingShare; pendingShare = null;
+      await handleShare(s).catch((err) => { console.error(err); setSync("Error", true); toast(`<p class="toast-title">No pude guardar lo que compartiste</p><p>${esc(friendlyErr(err))}</p>`, { kind: "bad", ms: 12000 }); });
+    }
+  }
 
   // 1) «Abrir en Colecta» desde el marcador
   if (location.hash === "#recibir") {
@@ -1182,10 +1188,12 @@
       return { net: "facebook", kind: "post", url: x.href };
     }
     if (h === "threads.com" || h === "threads.net") {
-      // Siempre con threads.com y sin lo que agrega la app al compartir (?xmt=…), así no se repite
-      const post = p.match(/^\/@([\w.]+)\/post\/([\w-]+)/);
+      // Siempre con threads.com y sin lo que agrega la app al compartir (?xmt=…), así no se repite.
+      // La @ puede llegar codificada (%40)
+      let q = p; try { q = decodeURIComponent(p); } catch { /* queda como vino */ }
+      const post = q.match(/^\/@([\w.]+)\/post\/([\w-]+)/);
       if (post) return { net: "threads", kind: "post", author: "@" + post[1], url: `https://www.threads.com/@${post[1]}/post/${post[2]}` };
-      const short = p.match(/^\/t\/([\w-]+)/);
+      const short = q.match(/^\/t\/([\w-]+)/);
       if (short) return { net: "threads", kind: "post", url: "https://www.threads.com/t/" + short[1] };
     }
     if (h === "youtube.com" || h === "youtu.be" || h === "music.youtube.com") {
@@ -1214,11 +1222,24 @@
     } while (page && out.length < LIMITS.items);
     return { name, out };
   }
+  // Todas las direcciones que llegaron al compartir: en la dirección, el texto o el título. Del texto van
+  // primero las del final, porque si viene el texto de la publicación, sus propios enlaces están antes
+  function sharedLinks(sh) {
+    const out = [];
+    if (sh.url && safeUrl(sh.url)) out.push(sh.url.trim());
+    for (const f of [sh.text, sh.title]) out.push(...(String(f || "").match(/(?:https?:\/\/|\b(?:www\.)?threads\.(?:com|net)\/)[^\s<>"']+/gi) || []).reverse());
+    return out;
+  }
   async function handleShare(sh) {
-    const found = (sh.url && safeUrl(sh.url)) || ((sh.text || "").match(/https?:\/\/[^\s<>"']+/) || [])[0] || "";
-    const c = classifyShared(found);
+    let found = "", c = null;
+    for (const u of sharedLinks(sh)) { c = classifyShared(/^https?:/i.test(u) ? u : "https://" + u); if (c) { found = u; break; } }
     show("import");
-    if (!c) return toast(`<p class="toast-title">No pude usar ese enlace</p><p>Colecta acepta publicaciones, reels y videos de Instagram, Facebook, Threads y YouTube, y listas de YouTube.</p>`, { kind: "warn", ms: 9000 });
+    if (!c) {
+      // Se muestra lo que llegó, para saber qué manda la app desde la que se compartió
+      const got = clip([sh.title, sh.text, sh.url].map((v) => String(v || "").trim()).filter(Boolean).join(" · "), 300);
+      console.warn("Compartir: no reconocí el enlace", sh);
+      return toast(`<p class="toast-title">No pude usar ese enlace</p><p>Colecta acepta publicaciones, reels y videos de Instagram, Facebook, Threads y YouTube, y listas de YouTube.</p><p class="small">${got ? "Recibí: «" + esc(got) + "»" : "No llegó ningún enlace."}</p>`, { kind: "warn", ms: 20000 });
+    }
     if (c.kind === "collection") {
       $$(".net-key").find((b) => b.dataset.net === c.net)?.click();
       return toast(`<p class="toast-title">Para traer una colección entera</p><p>Abrila en el navegador y tocá el marcador «Enviar a Colecta» (los pasos están en Importar). Compartir solo trae publicaciones sueltas.</p>`, { kind: "warn", ms: 12000 });
