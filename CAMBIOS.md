@@ -1,5 +1,22 @@
 # Cambios de Colecta
 
+## 1.0.5 — 24 de octubre de 2026
+
+### Novedades
+
+- **Threads tiene su tecla en Importar**, junto a Instagram, Facebook y YouTube, con la cantidad de enlaces que guardaste. Al tocarla explica cómo se guarda: de a una publicación, con Compartir → Más → Colecta.
+- En el teléfono, las cuatro teclas de redes van de a dos, para que se lean bien el nombre y la cantidad de enlaces.
+- Threads figura en la política de privacidad, en «Qué es Colecta» y en la descripción de la app. La política explica que, al compartir desde Threads, el servidor de Colecta abre el enlace en Threads, sin tu cuenta ni tus datos.
+
+### Correcciones
+
+- **Compartir desde Threads ya funciona.** Colecta abría Importar y no seguía, porque la app de Threads no manda la dirección de la publicación sino un enlace corto (`threads.com/share/…`). Ahora Colecta lo abre y guarda la publicación con su dirección completa, el autor y el texto, así el título se escribe solo, como en las demás redes.
+- Si Colecta no reconoce lo que compartiste, el aviso muestra lo que recibió, para saber qué mandó la otra app. Y si algo falla al guardar lo compartido, ahora lo avisa en lugar de quedarse quieta.
+
+### App de Android
+
+- No hace falta actualizarla: todo funciona con la versión 1.0.3 que ya tenés.
+
 ## 1.0.4 — 24 de octubre de 2026
 
 ### Novedades
