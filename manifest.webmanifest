@@ -1,7 +1,7 @@
 {
   "name": "Colecta",
   "short_name": "Colecta",
-  "description": "Tus guardados de Instagram, Facebook y YouTube, unificados.",
+  "description": "Tus guardados de Instagram, Facebook, Threads y YouTube, unificados.",
   "lang": "es-AR",
   "start_url": "./",
   "scope": "./",
