@@ -469,7 +469,7 @@ mark { background: color-mix(in srgb, var(--color-primary, #c2410c) 22%, transpa
 .nb-sub { margin-top: 4px; color: rgb(255 255 255 / .68); font-size: var(--text-sm); line-height: 1.5; max-width: 72ch; }
 .nb-sub b { color: #fff; }
 
-.tiles.net-keys { grid-template-columns: repeat(3, minmax(0, 190px)); justify-content: start; margin-bottom: 34px; }
+.tiles.net-keys { grid-template-columns: repeat(4, minmax(0, 190px)); justify-content: start; margin-bottom: 34px; }
 .net-key .key-cap { gap: 8px; }
 .net-key .tile-icon { width: 40% !important; max-width: 64px; }
 .net-key .tile-name { font-size: 14px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -515,10 +515,13 @@ mark { background: color-mix(in srgb, var(--color-primary, #c2410c) 22%, transpa
   .desk-only { display: none !important; }
   .phone-only { display: block; }
   .phone-help { display: block; }
-  .tiles.net-keys { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .net-key .key-cap { inset: 5px 5px 8px; gap: 4px; padding: 6px 4px; }
-  .net-key .tile-name { font-size: 11px; letter-spacing: .03em; }
-  .net-key .tile-count { font-size: 9.5px !important; }
+  /* Cuatro redes: en el teléfono van de a dos, en teclas apaisadas */
+  .tiles.net-keys { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 14px; }
+  .tile.key.net-key { aspect-ratio: 1.4 / 1; }
+  .net-key .key-cap { inset: 5px 5px 8px; gap: 4px; padding: 6px 6px; }
+  .net-key .tile-icon { width: 30px !important; margin-top: 0; flex: none; }
+  .net-key .tile-name { flex: none; font-size: 12px; letter-spacing: .04em; }
+  .net-key .tile-count { font-size: 10.5px !important; }
   .net-banner, .share-card { padding: 14px 16px; gap: 12px; }
   .nb-title { font-size: 1.02rem; }
   .imp-panel { padding: 4px 14px; }
@@ -526,3 +529,5 @@ mark { background: color-mix(in srgb, var(--color-primary, #c2410c) 22%, transpa
   .imp-n { width: 28px; height: 28px; font-size: 13px; border-radius: 7px; }
   .imp-body .row .btn { flex: 1 1 100%; }
 }
+/* Teléfonos angostos: la cuenta de enlaces ocupa más renglones */
+@media (max-width: 359px) { .tile.key.net-key { aspect-ratio: 1 / 1; } }

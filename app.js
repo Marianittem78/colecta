@@ -313,7 +313,7 @@
   function updateStatus() {
     for (const n of Object.keys(NETS)) {
       const el = $("#st-" + n);
-      if (!el) continue; // Threads no tiene tecla: se trae de a una publicación con Compartir
+      if (!el) continue;
       const list = items.filter((i) => i.net === n);
       const colls = new Set(list.map((i) => collKey(i.collection)));
       el.textContent = list.length ? `${list.length.toLocaleString("es-AR")} enlaces · ${colls.size} ${colls.size === 1 ? "colección" : "colecciones"}` : "Sin datos";
@@ -1104,6 +1104,7 @@
     instagram: { color: "#e4558f", text: "En Instagram: tu perfil → ☰ → Guardado. Entrá a una colección, o quedate en «Todas las publicaciones» para traer todas.", url: "https://www.instagram.com/" },
     facebook: { color: "#4d8df5", text: "En Facebook: entrá a facebook.com/saved y abrí una colección. El marcador desplaza la página solo hasta leer todo.", url: "https://www.facebook.com/saved/" },
     youtube: { color: "#f2484c", text: "En YouTube: abrí una lista (también «Ver más tarde») o «Tú → Listas de reproducción» para traer todas las visibles.", url: "https://www.youtube.com/feed/playlists" },
+    threads: { color: "#b4b4be", text: "Threads no tiene colecciones para traer de una vez, ni sirve el marcador: guardá cada publicación desde el teléfono, con Compartir → Más → Colecta (más abajo, en «Compartir a Colecta desde el teléfono»).", url: "" },
   };
   $$(".net-key").forEach((b) => (b.onclick = () => {
     const net = b.dataset.net, h = NET_HELP[net];
