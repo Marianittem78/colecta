@@ -1196,6 +1196,9 @@
       if (post) return { net: "threads", kind: "post", author: "@" + post[1], url: `https://www.threads.com/@${post[1]}/post/${post[2]}` };
       const short = q.match(/^\/t\/([\w-]+)/);
       if (short) return { net: "threads", kind: "post", url: "https://www.threads.com/t/" + short[1] };
+      // Lo que manda la app de Threads al compartir: un enlace corto que la función «threads» abre
+      const share = q.match(/^\/share\/([\w-]+)\/?$/);
+      if (share) return { net: "threads", kind: "post", share: true, url: `https://www.threads.com/share/${share[1]}/` };
     }
     if (h === "youtube.com" || h === "youtu.be" || h === "music.youtube.com") {
       const list = x.searchParams.get("list");
@@ -1266,6 +1269,18 @@
         const j = await (await fetch("https://www.youtube.com/oembed?format=json&url=" + encodeURIComponent(c.url))).json();
         item.title = j.title || item.title; item.author = j.author_name || ""; item.thumb = j.thumbnail_url; item.hashtags = [...new Set([...item.hashtags, ...P.extractHashtags(j.title || "")])];
       } catch { /* sin datos extra */ }
+    }
+    if (c.share) {
+      // Si no se puede abrir, queda el enlace corto, que igual lleva a la publicación
+      setSync("Leyendo la publicación…");
+      const p = await DB.resolveThreads(c.url);
+      setSync("Guardado");
+      const pc = p && classifyShared(p.url);
+      if (pc && pc.net === "threads" && !pc.share) {
+        item.url = pc.url; item.author = pc.author || "";
+        const t = clip(String(p.text || "").trim(), LIMITS.body);
+        if (t && !item.text) { item.text = t; item.hashtags = P.extractHashtags(t); }
+      }
     }
     await saveShared(item);
   }

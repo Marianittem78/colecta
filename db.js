@@ -156,6 +156,14 @@
       try { code = (await res.clone().json()).error || code; } catch { /* sin cuerpo JSON */ }
       return { error: code, espera: Number(res.headers.get("Retry-After")) || 0 };
     },
+    // Pide a la función «threads» la publicación a la que lleva un enlace corto de Threads.
+    // Devuelve { url, author, text } o null si no se pudo
+    async resolveThreads(url) {
+      try {
+        const { data, error } = await sb.functions.invoke("threads", { body: { url } });
+        return !error && data && typeof data.url === "string" ? data : null;
+      } catch { return null; }
+    },
     // Borra el título de la IA para que se vuelva a escribir (cuando cambió el contenido)
     async resetTitles(ids) {
       for (let k = 0; k < ids.length; k += 200) {
