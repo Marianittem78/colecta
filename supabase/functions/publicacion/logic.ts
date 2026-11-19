@@ -91,28 +91,53 @@ function palabras(s: string): string {
   return s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
-// Facebook, sin sesión: og:title es el autor; <title> es «primera línea… - Autor | Facebook» y og:url
-// lleva el comienzo del texto como palabras con guiones. og:description, si viene, es el texto entero.
+// «a | b | Facebook» → ["a", "b"], sin las cifras que Facebook antepone en los reels
+// («86 mil reproducciones · 717 reacciones», «357 reacciones · 104 veces compartido»)
+const CIFRAS = /^[\d.,\s]*(mil|k|m|mill\.?)?\s*(reproducciones|reacciones|views|reactions|comentarios|comments|veces compartido|shares)\b/i;
+function partes(s: string): string[] {
+  return s.replace(/\s*\|\s*Facebook\s*$/i, "").split(" | ").map((x) => x.trim()).filter((x, k) => x && !(k === 0 && CIFRAS.test(x)) && !/^facebook$/i.test(x));
+}
+
+// Facebook, sin sesión. Publicación de una página o persona: og:title es el autor; <title> es
+// «primera línea… - Autor | Facebook»; og:url lleva el comienzo del texto como palabras con guiones.
+// Reel: og:title es «cifras | texto | Autor» (o «cifras | Autor on Reels»). Grupo: <title> es
+// «Grupo | texto» y og:title, el texto. og:description, si viene, es el texto (a veces recortado).
 export function leerFacebook(original: string, urlFinal: string, html: string): Publicacion | null {
   const ogTitle = meta(html, "og:title");
   // Sin og: es la página de ingreso o de error, no la publicación
   if (!ogTitle && !meta(html, "og:description")) return null;
-  const titulo = entidades(html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").replace(/\s*\|\s*Facebook\s*$/i, "").trim();
-  let author = ogTitle, inicio = titulo;
-  const sep = titulo.lastIndexOf(" - ");
-  if (sep > 0) {
-    const fin = titulo.slice(sep + 3).trim();
-    if (!author || palabras(author) === palabras(fin)) { author = fin; inicio = titulo.slice(0, sep).trim(); }
+  const titulo = entidades(html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? "").trim();
+  const og = partes(ogTitle), tt = partes(titulo);
+  let grupo = false;
+  try { grupo = /^\/groups\//.test(new URL(urlFinal).pathname); } catch { /* no es una dirección */ }
+  let author: string, desdeTitulo: string, inicio = "";
+  if (grupo) {
+    // De un grupo se toma el nombre del grupo como autor
+    author = tt[0] ?? "";
+    desdeTitulo = og.filter((x) => palabras(x) !== palabras(author)).join("\n");
+    if (!desdeTitulo) inicio = tt.slice(1).join("\n");
+  } else {
+    author = og.length >= 2 ? og[og.length - 1] : og[0] ?? "";
+    desdeTitulo = og.length >= 2 ? og.slice(0, -1).join("\n") : "";
+    inicio = tt.join(" | ");
+    const sep = inicio.lastIndexOf(" - ");
+    if (sep > 0) {
+      const fin = inicio.slice(sep + 3).trim();
+      if (!author || palabras(author) === palabras(fin)) { author = fin; inicio = inicio.slice(0, sep).trim(); }
+    }
   }
+  author = author.replace(/\s+(on|en) Reels$/i, "").trim();
   if (palabras(inicio) === palabras(author)) inicio = "";
-  inicio = inicio.replace(/(\.\.\.|…)$/, "").trim();
+  inicio = (desdeTitulo || inicio).replace(/(\.\.\.|…)$/, "").trim();
   // El comienzo del texto que está en la dirección suele ser más largo que el título
-  const og = meta(html, "og:url");
+  const ogUrl = meta(html, "og:url");
   let slug = "";
-  try { slug = decodeURIComponent(new URL(og).pathname.match(/\/posts\/([^/]+)\/\d+\/?$/)?.[1] ?? "").replace(/-/g, " ").trim(); } catch { /* sin og:url */ }
-  let text = meta(html, "og:description");
-  if (!text) text = slug && palabras(slug).startsWith(palabras(inicio)) && slug.length > inicio.length ? slug : inicio;
-  text = limpiar(text);
+  try { slug = decodeURIComponent(new URL(ogUrl).pathname.match(/\/posts\/([^/]+)\/\d+\/?$/)?.[1] ?? "").replace(/-/g, " ").trim(); } catch { /* sin og:url */ }
+  const resto = slug && palabras(slug).startsWith(palabras(inicio)) && slug.length > inicio.length ? slug : inicio;
+  let desc = meta(html, "og:description");
+  if (palabras(desc) === palabras(author) || /^facebook$/i.test(desc)) desc = "";
+  // og:description a veces viene más recortado que el texto del título
+  const text = limpiar(palabras(resto).length > palabras(desc).length + 20 ? resto : desc || resto);
   if (/^facebook$/i.test(author)) author = "";
   if (!author && !text) return null;
   const url = fbLimpia(urlFinal) ?? original;
