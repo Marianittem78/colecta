@@ -164,6 +164,13 @@
         return !error && data && typeof data.url === "string" ? data : null;
       } catch { return null; }
     },
+    // Autor y texto de una publicación de Instagram o Facebook compartida (función «publicacion»)
+    async resolvePost(url) {
+      try {
+        const { data, error } = await sb.functions.invoke("publicacion", { body: { url } });
+        return !error && data && typeof data.url === "string" ? data : null;
+      } catch { return null; }
+    },
     // Borra el título de la IA para que se vuelva a escribir (cuando cambió el contenido)
     async resetTitles(ids) {
       for (let k = 0; k < ids.length; k += 200) {

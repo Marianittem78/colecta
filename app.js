@@ -1282,6 +1282,21 @@
         if (t && !item.text) { item.text = t; item.hashtags = P.extractHashtags(t); }
       }
     }
+    if ((c.net === "instagram" || c.net === "facebook") && (!item.text || !item.author)) {
+      // Desde la app de Instagram o Facebook llega solo la dirección: la función «publicacion» trae el
+      // autor y el texto (sin ellos la IA escribe un título genérico). Si falla, se guarda como llegó.
+      // Las publicaciones +18 o de cuentas limitadas no los devuelven
+      setSync("Leyendo la publicación…");
+      const p = await DB.resolvePost(c.url);
+      setSync("Guardado");
+      const pc = p && classifyShared(p.url);
+      if (pc && pc.net === c.net && pc.kind === "post") {
+        item.url = pc.url;
+        if (!item.author) item.author = clip(String(p.author || "").trim(), LIMITS.author);
+        const t = clip(String(p.text || "").trim(), LIMITS.body);
+        if (t && !item.text) { item.text = t; item.hashtags = P.extractHashtags(t); }
+      }
+    }
     await saveShared(item);
   }
 
