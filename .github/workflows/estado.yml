@@ -1,0 +1,52 @@
+# Colecta — comprobación de estado cada hora (gratis: repositorio público).
+# Si algo no responde, la ejecución queda en rojo y GitHub avisa por correo.
+name: Estado de Colecta
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  comprobar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SITIO: https://marianittem78.github.io/colecta/
+      SB: https://rlbxanqztphlwqivahzx.supabase.co
+      # Clave publicable (la misma que está en db.js; no es secreta).
+      SB_KEY: sb_publishable_vGH1wqw-NJZZ6LAmpauqvQ_J4Ti9TY_
+      LENTO: "3"   # segundos a partir de los cuales una respuesta cuenta como lenta
+    steps:
+      - name: Comprobar sitio, Supabase y funciones
+        run: |
+          fallas=0
+          lentas=0
+          revisar() { # nombre, esperado (regex de códigos), curl args...
+            nombre="$1"; esperado="$2"; shift 2
+            salida=$(curl -s -o /dev/null -w "%{http_code} %{time_total}" --max-time 20 --retry 2 --retry-delay 5 "$@" || echo "000 20")
+            codigo=${salida% *}; tiempo=${salida#* }
+            if [[ "$codigo" =~ ^($esperado)$ ]]; then estado="ok"; else estado="FALLA"; fallas=$((fallas+1)); fi
+            if [ "$estado" = ok ] && awk "BEGIN{exit !($tiempo > $LENTO)}"; then estado="LENTO"; lentas=$((lentas+1)); fi
+            echo "| $nombre | $codigo | ${tiempo}s | $estado |" >> "$GITHUB_STEP_SUMMARY"
+            echo "$nombre: $codigo en ${tiempo}s ($estado)"
+            [ "$estado" = FALLA ] && echo "::error title=$nombre::respondió $codigo (se esperaba $esperado)"
+            [ "$estado" = LENTO ] && echo "::warning title=$nombre::tardó ${tiempo}s"
+            return 0
+          }
+          echo "| Servicio | Código | Tiempo | Estado |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          revisar "Sitio (GitHub Pages)" "200" "$SITIO"
+          revisar "Supabase Auth" "200" -H "apikey: $SB_KEY" "$SB/auth/v1/health"
+          # Las funciones piden sesión: sin ella deben responder 401 (o 200 al OPTIONS).
+          # 404 = no está desplegada; 5xx = está caída.
+          for f in threads publicacion titulos; do
+            revisar "Función $f" "200|204" -X OPTIONS -H "Origin: https://marianittem78.github.io" "$SB/functions/v1/$f"
+            revisar "Función $f (sin sesión)" "401" -X POST -H "Content-Type: application/json" -d '{}' "$SB/functions/v1/$f"
+          done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Fallas: $fallas · Lentas: $lentas" >> "$GITHUB_STEP_SUMMARY"
+          [ "$fallas" -eq 0 ] || exit 1
