@@ -587,6 +587,7 @@
     { name: "Tips Cocina", glow: "#88b8c0" },
     { name: "Pelis | Series", glow: "#4898a8", alias: ["películas", "pelis", "películas y series"] },
     { name: "Lifestyle", glow: "#f8b070" },
+    { name: "DJ", glow: "#f8b058" },
   ];
   const iconKey = (name) => fold(name).replace(/[^a-z0-9]/g, "");
   const wordsKey = (name) => fold(name).split(/[^a-z0-9]+/).filter(Boolean).sort().join(" "); // «plantas-tips» = «Tips Plantas»
